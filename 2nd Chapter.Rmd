@@ -99,10 +99,9 @@ data.frame(p_grid, posterior_1, posterior_2, posterior_3) %>%
   geom_line() +
   labs(x = "Proportion of Water",
        y = "Posterior Probability",
-       color = "Pattern") +
+       color = "Pattern",
+       title = "Uniformal Priors") +
   theme_minimal()
-
-
 ```
 
 
@@ -110,3 +109,141 @@ data.frame(p_grid, posterior_1, posterior_2, posterior_3) %>%
 2M2. Now assume a prior for p that is equal to zero when p < 0.5 and is a positive constant when
 p ≥ 0.5. Again compute and plot the grid approximate posterior distribution for each of the sets of
 observations in the problem just above
+
+```{r}
+# define grid length 
+grid_l <- 30
+
+# define grid
+p_grid <- seq(from = 0 , to = 1 , length.out = grid_l)
+
+# define new prior
+prior <- ifelse(p_grid < 0.5, yes = 0, no = 1)
+
+# compute likelihood at each value in grid
+likelihood_1 <- dbinom(3, size = 3, prob = p_grid)
+likelihood_2 <- dbinom(3, size = 4, prob = p_grid)
+likelihood_3 <- dbinom(5, size = 7, prob = p_grid)
+
+# compute product of likelihood and prior
+unstd.posterior_1 <- likelihood_1 * prior
+unstd.posterior_2 <- likelihood_2 * prior
+unstd.posterior_3 <- likelihood_3 * prior
+
+# standardize the posterior, so it sums to 1
+posterior_1 <- unstd.posterior_1 / sum(unstd.posterior_1)
+posterior_2 <- unstd.posterior_2 / sum(unstd.posterior_2)
+posterior_3 <- unstd.posterior_3 / sum(unstd.posterior_3)
+
+
+# Plot a results
+data.frame(p_grid, posterior_1, posterior_2, posterior_3) %>%
+  pivot_longer(cols = starts_with("post"), names_to = "posterior", values_to = "prob") %>%
+  mutate(posterior = case_when(posterior == "posterior_1" ~ "W, W, W",
+                               posterior == "posterior_2" ~ "W, W, W, L",
+                               posterior == "posterior_3" ~ "L, W, W, L, W, W, W")) %>% 
+  ggplot(aes(x = p_grid, y = prob, col = posterior)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Proportion of Water",
+       y = "Posterior Probability",
+       color = "Pattern",
+       title = "Priors = 0 when p < 0.5") +
+  theme_minimal()
+```
+
+
+
+2M3. Suppose there are two globes, one for Earth and one for Mars. The Earth globe is 70% covered
+in water. The Mars globe is 100% land. Further suppose that one of these globes—you don’t know
+which—was tossed in the air and produced a “land” observation. Assume that each globe was equally
+likely to be tossed. Show that the posterior probability that the globe was the Earth, conditional on seeing “land” (Pr(Earth|land)), is 0.23
+
+```{r}
+# Define probability of land on Earth and Mars
+p_land_earth <- 0.3
+p_land_mars <- 1
+
+# Earth prior
+p_earth <-  0.5
+
+# average probability of land
+p_land <- (p_land_earth * p_earth) + (p_land_mars * (1 - p_earth))
+
+# Bayes theorem
+p_earth_land <- (p_land_earth * p_earth) / p_land
+
+print(p_earth_land)
+```
+
+
+
+2M4. Suppose you have a deck with only three cards. Each card has two sides, and each side is either black or white. One card has two black sides. The second card has one black and one white side. The third card has two white sides. Now suppose all three cards are placed in a bag and shuffled. Someone reaches into the bag and pulls out a card and places it flat on a table. A black side is shown facing up, but you don’t know the color of the side facing down. Show that the probability that the other side is also black is 2/3. 
+Use the counting method (Section 2 of the chapter) to approach this problem. This means counting up the ways that each card could produce the observed data (a black side facing up on the table).
+
+```{r}
+ways_to_have_black <- c(2, 1, 0)
+
+prior <- rep(1, 3)
+
+posterior <- (ways_to_have_black * prior)
+posterior <- posterior / sum(posterior)
+
+# Only the first card have the second black side
+# thus the p of first card and p of second black side is the same
+p_black <- posterior[1]
+print(posterior[1])
+```
+
+
+  2M5. Now suppose there are four cards: B/B, B/W, W/W, and another B/B. Again suppose a card is
+drawn from the bag and a black side appears face up. Again calculate the probability that the other
+side is black
+
+```{r}
+ways_to_have_black <- c(2, 1, 0, 2)
+
+prior <- rep(1, 4)
+
+posterior <- (ways_to_have_black * prior)
+posterior <- posterior / sum(posterior)
+
+p_black <- posterior[1] + posterior[4]
+p_black
+```
+
+
+
+  2M6. Imagine that black ink is heavy, and so cards with black sides are heavier than cards with white sides. As a result, it’s less likely that a card with black sides is pulled from the bag. So again assume there are three cards: B/B, B/W, and W/W. After experimenting a number of times, you conclude that for every way to pull the B/B card from the bag, there are 2 ways to pull the B/W card and 3 ways to pull the W/W card. Again suppose that a card is pulled and a black side appears face up. Show that the probability the other side is black is now 0.5. Use the counting method, as before
+
+```{r}
+ways_to_have_black <- c(2, 1, 0)
+
+prior <- c(1, 2, 3)
+
+posterior <- (ways_to_have_black * prior)
+posterior <- posterior / sum(posterior)
+
+p_black <- posterior[1]
+p_black
+```
+
+
+
+  2M7. Assume again the original card problem, with a single card showing a black side face up. Before looking at the other side, we draw another card from the bag and lay it face up on the table. The face that is shown on the new card is white. Show that the probability that the first card, the one showing a black side, has black on its other side is now 0.75. Use the counting method, if you can. 
+  Hint: Treat this like the sequence of globe tosses, counting all the ways to see each observation, for each possible first card
+  
+```{r}
+ways_to_have_first_black <- c(2, 1, 0)
+ways_to_have_second_black <- c(3, 2, 0)
+
+prior <- c(1, 1, 1)
+
+posterior <- (ways_to_have_first_black * ways_to_have_second_black * prior)
+posterior <- posterior / sum(posterior)
+
+p_black <- posterior[1]
+p_black
+```
+  
+  
