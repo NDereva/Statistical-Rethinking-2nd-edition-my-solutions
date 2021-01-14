@@ -349,57 +349,5 @@ posterior[1]
 ```
 
 
-Additional task from 
-https://github.com/rmcelreath/statrethinking_winter2019/blob/master/homework/week01.pdf
-
-3. This problem is more open-ended than the others. Feel free to collaborate on the solution. Suppose you want to estimate the Earths proportion of water very precisely. Specifically, you want the 99% percentile interval of the posterior distribution to be only 0.05 wide. This means the distance between the upper and lower bound of the interval should be 0.05. How many times will you have to toss the globe to do this? I won’t require a precise answer. I’m honestly more interested in your approach.
 
 
-
-```{r}
-# define the true water proportion
-water_prop <- 0.71
-
-# define the vector in which number of tosses needed will be stored
-minimum_n_tosses <- rep(NA, 100)
-
-
-for (i in 1:100) {
-  
-  # start from 100 tosses
-  n_toss <- 100
-  desired_pi_width <- 0.05
-  actual_pi_width <- 1
-
-  
-  while (actual_pi_width > desired_pi_width) {
-    
-    # randomly generate globe tosses
-    tosses <- rbinom(1e4, size = n_toss, prob = water_prop)
-    
-    prop_earth <- tosses / n_toss
-    
-    # calculate actual 99% interval
-    upper_bound <- quantile(prop_earth, probs = c(0.995))
-    lower_bound <- quantile(prop_earth, probs = c(0.005))
-    
-    actual_pi_width <- upper_bound - lower_bound
-    
-    if (actual_pi_width < desired_pi_width) {
-      minimum_n_tosses[i] <- n_toss
-      break
-    }
-    
-    n_toss <- n_toss + 10
-  }
-}
-
-```
-
-```{r}
-boxplot(minimum_n_tosses)
-```
-
-It seems that to have 99% percentile interval of the posterior distribution to be
-only 0.05 wide we will have to toss the globe more then 2000 times. 
-Assuming that each toss is independent from other. 

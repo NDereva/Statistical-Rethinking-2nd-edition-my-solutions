@@ -70,6 +70,10 @@ posterior <- likelihood * prior
 posterior <- posterior / sum(posterior)
 ```
 
+```{r}
+plot(p_grid, posterior)
+```
+
 
 3M2. Draw 10,000 samples from the grid approximation from above. Then use the samples to calculate the 90% HPDI for p
 
@@ -81,3 +85,229 @@ rethinking::HPDI(samples, prob = 0.9)
 ```
 
 3M3. Construct a posterior predictive check for this model and data. This means simulate the distribution of samples, averaging over the posterior uncertainty in p. What is the probability of observing 8 water in 15 tosses?
+
+```{r}
+ppc <- rbinom(1e4, size = 15, prob = samples)
+
+mean(ppc == 8)
+```
+
+
+3M4. Using the posterior distribution constructed from the new (8/15) data, now calculate the probability of observing 6 water in 9 tosses.
+
+```{r}
+ppc <- rbinom(1e4, size = 9, prob = samples)
+
+mean(ppc == 6)
+```
+
+
+3M5. Start over at 3M1, but now use a prior that is zero below p = 0.5 and a constant above p = 0.5. This corresponds to prior information that a majority of the Earth’s surface is water. Repeat each problem above and compare the inferences. What difference does the better prior make? If it helps, compare inferences (using both priors) to the true value p = 0.7
+
+```{r}
+p_grid <- seq(from = 0 , to = 1 , length.out = 1000)
+prior <- ifelse(p_grid > 0.5, yes = 1, no = 0)
+likelihood <- dbinom(8 , size = 15, prob = p_grid)
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+
+plot(p_grid, posterior)
+```
+
+```{r}
+set.seed(100)
+samples <- sample(p_grid , prob = posterior , size = 1e4, replace = TRUE)
+
+rethinking::HPDI(samples, prob = 0.9)
+```
+The HPDI now is much narrower
+
+
+
+```{r}
+ppd <- rbinom(1e4, size = 15, prob = samples)
+
+mean(ppd == 8)
+```
+The probability of having 8 out 15 Water, is nearly the same
+
+```{r}
+ppd <- rbinom(1e4, size = 9, prob = samples)
+
+mean(ppd == 6)
+```
+
+The probability of having 6 out of 9 water, is a bit higher than in case of flat
+priors
+
+
+3M6. Suppose you want to estimate the Earth’s proportion of water very precisely. Specifically, you
+want the 99% percentile interval of the posterior distribution of p to be only 0.05 wide. This means the distance between the upper and lower bound of the interval should be 0.05. How many times will you have to toss the globe to do this?
+
+```{r}
+# define the true water proportion
+water_prop <- 0.71
+
+# define the vector in which number of tosses needed will be stored
+minimum_n_tosses <- rep(NA, 100)
+
+
+for (i in 1:100) {
+  
+  # start from 100 tosses
+  n_toss <- 100
+  desired_pi_width <- 0.05
+  actual_pi_width <- 1
+
+  
+  while (actual_pi_width > desired_pi_width) {
+    
+    # randomly generate globe tosses
+    tosses <- rbinom(1e4, size = n_toss, prob = water_prop)
+    
+    prop_earth <- tosses / n_toss
+    
+    # calculate actual 99% interval
+    upper_bound <- quantile(prop_earth, probs = c(0.995))
+    lower_bound <- quantile(prop_earth, probs = c(0.005))
+    
+    actual_pi_width <- upper_bound - lower_bound
+    
+    if (actual_pi_width < desired_pi_width) {
+      minimum_n_tosses[i] <- n_toss
+      break
+    }
+    
+    # increment number of tosses by 10 each iteration
+    n_toss <- n_toss + 10
+  }
+}
+
+```
+
+```{r}
+boxplot(minimum_n_tosses)
+```
+
+It seems that to have 99% percentile interval of the posterior distribution to be
+ 0.05 wide we will have to toss the globe around 2100 times. 
+Assuming that each toss is independent from other.
+
+
+
+Hard. The Hard problems here all use the data below. These data indicate the gender (male=1, female=0) of officially reported first and second born children in 100 two-child families
+
+```{r}
+library(rethinking)
+data(homeworkch3)
+```
+
+```{r}
+print(birth1)
+```
+```{r}
+print(birth2)
+```
+
+
+3H1. Using grid approximation, compute the posterior distribution for the probability of a birth
+being a boy. Assume a uniform prior probability. Which parameter value maximizes the posterior
+probability?
+
+```{r}
+p_grid <- seq(from = 0, to = 1, length.out = 1000)
+prior <- rep(1, 1000)
+
+boys <- sum(birth1, birth2)
+total <- length(birth1) + length(birth2)
+
+likelihood <- dbinom(x = boys, size = total, prob = p_grid)
+
+posterior <- likelihood * prior
+posterior <- posterior / sum(posterior)
+
+plot(p_grid, posterior)
+```
+Which  value maximizes the posterior probability?
+```{r}
+p_grid[which.max(posterior)]
+```
+
+3H2. Using the sample function, draw 10,000 random parameter values from the posterior distribution you calculated above. Use these samples to estimate the 50%, 89%, and 97% highest posterior
+density intervals.
+
+```{r}
+samples <- sample(p_grid, size = 1e4, replace = TRUE, prob = posterior)
+```
+
+```{r}
+plot(density(samples))
+```
+
+```{r}
+HPDI(samples, prob = 0.50)
+```
+
+```{r}
+HPDI(samples, prob = 0.89)
+```
+```{r}
+HPDI(samples, prob = 0.97)
+```
+
+3H3. Use rbinom to simulate 10,000 replicates of 200 births. You should end up with 10,000 numbers, each one a count of boys out of 200 births. Compare the distribution of predicted numbers
+of boys to the actual count in the data (111 boys out of 200 births). There are many good ways to
+visualize the simulations, but the dens command (part of the rethinking package) is probably the
+easiest way in this case. Does it look like the model fits the data well? That is, does the distribution of predictions include the actual observation as a central, likely outcome?
+
+```{r}
+library(ggplot2)
+```
+
+
+```{r}
+ppd <- rbinom(1e4, size = 200, prob = samples)
+
+ggplot() +
+  geom_histogram(aes(x = ppd), alpha = 0.6, binwidth = 1) +
+  geom_vline(xintercept = 111, color = "red", linetype = "dashed") +
+  theme_minimal()
+```
+It seems that the model fit well and the predictive posterior distribution peak
+in the actual boy count (111)
+
+
+3H4. Now compare 10,000 counts of boys from 100 simulated first borns only to the number of boys
+in the first births, birth1. How does the model look in this light?
+
+```{r}
+boys1 <- rbinom(1e4, size = 100, prob = samples)
+
+ggplot() +
+  geom_histogram(aes(x = boys1), alpha = 0.6, binwidth = 1) +
+  geom_vline(xintercept = sum(birth1), color = "red", linetype = "dashed") +
+  geom_vline(xintercept = median(boys1), color = "black")
+```
+Using new data model appears to perform less well. 
+However, the difference between maximum posterior predicted value and the actual number of 
+boys is not that big.
+
+
+3H5. The model assumes that sex of first and second births are independent. To check this assumption, focus now on second births that followed female first borns. Compare 10,000 simulated counts of boys to only those second births that followed girls. To do this correctly, you need to count the number of first borns who were girls and simulate that many births, 10,000 times. Compare the counts of boys in your simulations to the actual observed count of boys following girls. How does the model look in this light? Any guesses what is going on in these data?
+
+```{r}
+# vector with first born girls
+girls1 <- ifelse(birth1 == 0, yes = 1, no = 0)
+
+g <- rbinom(1e4, size = sum(girls1), prob = samples)
+
+boy_after_girl <- birth2[which(girls1 == 1)]
+
+ggplot() +
+  geom_histogram(aes(g), alpha = 0.6, binwidth = 1) +
+  geom_vline(xintercept = sum(boy_after_girl), color = "red")
+
+```
+
+It seems that model significantly underestimate the prob of having a boy after a girl. 
+Thus the assumption that first and second born independent is violated. 
