@@ -235,15 +235,171 @@ p_black
   
 ```{r}
 ways_to_have_first_black <- c(2, 1, 0)
-ways_to_have_second_black <- c(3, 2, 0)
+ways_to_have_second_white <- c(3, 2, 1)
 
 prior <- c(1, 1, 1)
 
-posterior <- (ways_to_have_first_black * ways_to_have_second_black * prior)
+posterior <- (ways_to_have_first_black * ways_to_have_second_white * prior)
 posterior <- posterior / sum(posterior)
 
 p_black <- posterior[1]
 p_black
 ```
   
+  2H1. Suppose there are two species of panda bear. Both are equally common in the wild and live
+in the same places. They look exactly alike and eat the same food, and there is yet no genetic assay capable of telling them apart. They differ however in their family sizes. Species A gives birth to twins 10% of the time, otherwise birthing a single infant. Species B births twins 20% of the time, otherwise birthing singleton infants. Assume these numbers are known with certainty, from many years of field research.
+  Now suppose you are managing a captive panda breeding program. You have a new female panda
+of unknown species, and she has just given birth to twins. What is the probability that her next birth will also be twins?
+
+```{r}
+# Define A and B species probability of getting twins
+p_twins <- c(0.1, 0.2)
+
+priors <- c(1, 1)
+
+p_first_twin <- (p_twins * priors) / sum(p_twins)
+
+# Now we can use p_first_twin as a prior for the second birth twin
+p_second_twin <- p_first_twin * p_twins
+
+# probability of the next birth is twin when we don't know what specie we have
+sum(p_second_twin)
+
+```
+
+2H2. Recall all the facts from the problem above. Now compute the probability that the panda we
+have is from species A, assuming we have observed only the first birth and that it was twins.
+
+```{r}
+# Define A and B species probability of getting twins
+p_twins <- c(0.1, 0.2)
+
+priors <- c(1, 1)
+
+posterior <- (p_twins * priors) / sum(p_twins)
+
+posterior[1]
+```
+
+```{r}
+# Or using Byes Theorem 
+
+p_A <- 0.5
+
+p_tA <- 0.1
+p_tB <- 0.2
+
+# average probability of twins
+p_t <- (p_A * p_tA) + ((1 - p_A) * p_tB)
+
+# P(A|twins)
+p_tA * p_A / p_t
+```
+
+
+2H3. Continuing on from the previous problem, suppose the same panda mother has a second birth
+and that it is not twins, but a singleton infant. Compute the posterior probability that this panda is species A.
+
+```{r}
+p_twins <- c(0.1, 0.2)
+p_single <- 1 - p_twins
+
+priors <- c(1, 1)
+
+p_first_twin <- (p_twins * priors) / sum(p_twins)
+
+p_second_single <- (p_first_twin * p_single)
+p_second_single <- posterior / sum(posterior)
+p_second_single[1]
+```
+
+  2H4. A common boast of Bayesian statisticians is that Bayesian inference makes it easy to use all of the data, even if the data are of different types.
+  So suppose now that a veterinarian comes along who has a new genetic test that she claims can
+identify the species of our mother panda. But the test, like all tests, is imperfect. This is the information you have about the test:
+• The probability it correctly identifies a species A panda is 0.8.
+• The probability it correctly identifies a species B panda is 0.65.
+  The vet administers the test to your panda and tells you that the test is positive for species A. First ignore your previous information from the births and compute the posterior probability that your panda is species A. Then redo your calculation, now using the birth data as well.
+
+
+```{r}
+# First withour any birth data
+prior <- c(1, 1)
+
+# probability of A given test 
+p_a <- c(0.8, 0.35)
+
+test_posterior <- p_a * prior / sum(p_a)
+
+# Prob to have A if test says A
+test_posterior[1]
+```
+
+```{r}
+# include birth data 
+
+p_twins <- c(0.1, 0.2)
+p_single <- 1 - p_twins
+
+# use posterior from the last chunk as a prior 
+test_prior <- test_posterior
+
+posterior <- test_prior * p_twins * p_single
+posterior <- posterior / sum(posterior)
+posterior[1]
+```
+
+
+Additional task from 
+https://github.com/rmcelreath/statrethinking_winter2019/blob/master/homework/week01.pdf
+
+3. This problem is more open-ended than the others. Feel free to collaborate on the solution. Suppose you want to estimate the Earths proportion of water very precisely. Specifically, you want the 99% percentile interval of the posterior distribution to be only 0.05 wide. This means the distance between the upper and lower bound of the interval should be 0.05. How many times will you have to toss the globe to do this? I won’t require a precise answer. I’m honestly more interested in your approach.
+
+
+
+```{r}
+# define the true water proportion
+water_prop <- 0.71
+
+# define the vector in which number of tosses needed will be stored
+minimum_n_tosses <- rep(NA, 100)
+
+
+for (i in 1:100) {
   
+  # start from 100 tosses
+  n_toss <- 100
+  desired_pi_width <- 0.05
+  actual_pi_width <- 1
+
+  
+  while (actual_pi_width > desired_pi_width) {
+    
+    # randomly generate globe tosses
+    tosses <- rbinom(1e4, size = n_toss, prob = water_prop)
+    
+    prop_earth <- tosses / n_toss
+    
+    # calculate actual 99% interval
+    upper_bound <- quantile(prop_earth, probs = c(0.995))
+    lower_bound <- quantile(prop_earth, probs = c(0.005))
+    
+    actual_pi_width <- upper_bound - lower_bound
+    
+    if (actual_pi_width < desired_pi_width) {
+      minimum_n_tosses[i] <- n_toss
+      break
+    }
+    
+    n_toss <- n_toss + 10
+  }
+}
+
+```
+
+```{r}
+boxplot(minimum_n_tosses)
+```
+
+It seems that to have 99% percentile interval of the posterior distribution to be
+only 0.05 wide we will have to toss the globe more then 2000 times. 
+Assuming that each toss is independent from other. 
