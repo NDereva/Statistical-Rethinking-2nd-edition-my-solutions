@@ -1,0 +1,149 @@
+---
+title: "4 chapter book"
+author: "Mykola Dereva"
+date: "1/19/2021"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+library(rethinking)
+library(dplyr)
+
+```
+
+
+```{r}
+growth <- replicate(1e4, prod(1 + runif(12,0,0.1)))
+dens(growth, norm.comp = TRUE)
+```
+
+
+```{r}
+big <- replicate(1e4, prod(1 + runif(12,0,0.5)))
+small <- replicate(1e4, prod(1 + runif(12,0,0.01)))
+
+dens(big, norm.comp = TRUE)
+dens(small, norm.comp = TRUE)
+```
+
+
+```{r}
+log.big <- replicate(1e4, log(prod(1 + runif(12,0,0.5))))
+dens(log.big, norm.comp = TRUE)
+```
+
+
+
+# Gausian model of height
+
+```{r}
+data(Howell1)
+d <- Howell1
+str(d)
+```
+
+```{r}
+precis(d, hist = FALSE)
+```
+
+```{r}
+d2 <- d %>% 
+  filter(age >= 18)
+```
+
+
+```{r}
+curve(dnorm(x , 178 , 20) , from = 100 , to = 250)
+```
+```{r}
+curve(dunif(x , 0 , 50) , from = -10 , to = 60)
+```
+
+prior predictive distribution
+
+```{r}
+sample_mu <- rnorm(1e4, 178, 20)
+sample_sigma <- runif(1e4, 0, 15)
+
+prior_h <- rnorm(1e4, sample_mu, sample_sigma)
+dens(prior_h)
+```
+
+
+
+# Grid approximaiton
+
+```{r}
+#  establish the range of µ and σ values, respectively, to calculate over
+mu.list <- seq(from = 150, to = 160, length.out = 100)
+sigma.list <- seq(from = 7, to = 9, length.out = 100)
+
+#expands chosen µ and σ values into a matrix of all of the combinations of µ and σ
+post <- expand.grid(mu = mu.list, sigma = sigma.list)
+
+# pass the unique combination of µ and σ on each row of
+# post to a function that computes the log-likelihood of each observed height,
+# and adds all of these log-likelihoods
+
+post$LL <- sapply(1:nrow(post), function(i) sum(
+  dnorm(d2$height , post$mu[i] , post$sigma[i] , log = TRUE )))
+
+
+# multiply the prior by the likelihood to get the product that is proportional
+# to the posterior density.
+# priors are also on the log scale, and so we add them to the log-likelihood, which is
+# equivalent to multiplying the raw densities by the likelihood
+post$prod <- post$LL + dnorm(post$mu, 178, 20, log = TRUE) +
+  dunif(post$sigma, 0, 50, log = TRUE)
+
+#relative posterior probabilities
+post$relative_LL <- post$prod - max(post$prod)
+post$prob <- exp(post$relative_LL)
+```
+
+```{r}
+contour_xyz(post$mu, post$sigma, post$prob)
+```
+
+```{r}
+image_xyz(post$mu, post$sigma, post$prob)
+```
+
+mu and sigma with the max probability
+```{r}
+post[which.max(post$prob), c("mu", "sigma", "prob")]
+```
+
+Sampling from the posterior
+
+```{r}
+sample.rows <- sample(1:nrow(post), size = 1e4, replace = TRUE, prob = post$prob)
+sample.mu <- post$mu[sample.rows]
+sample.sigma <- post$sigma[sample.rows]
+```
+
+```{r}
+plot(sample.mu, sample.sigma, cex = 2, pch = 16, col = col.alpha(rangi2, 0.05))
+
+```
+
+```{r}
+dens( sample.mu )
+```
+
+```{r}
+dens( sample.sigma )
+```
+
+```{r}
+PI( sample.mu )
+
+```
+
+```{r}
+PI( sample.sigma )
+```
+
+
+# Quadratic approximation
