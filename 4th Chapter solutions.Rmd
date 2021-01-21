@@ -5,6 +5,8 @@ date: "1/20/2021"
 output: html_document
 ---
 ```{r}
+rm(list = ls())
+
 library(rethinking)
 library(ggplot2)
 library(tidyverse)
@@ -533,3 +535,251 @@ shade(mu.PI, weight.seq)
 shade(height.PI, weight.seq)
 ```
 
+
+
+# 4H4. 
+Plot the prior predictive distribution for the parabolic polynomial regression model in the chapter. You can modify the code that plots the linear regression prior predictive distribution. Can you modify the prior distributions of α, β1, and β2 so that the prior predictions stay within the biologically reasonable outcome space? That is to say: Do not try to fit the data by hand. But do try to keep the curves consistent with what you know about height and weight, before seeing these exact data
+
+
+Prior predictive distribution for polynomial model specified as in the chapter:
+
+$$
+height_{i} \sim ~ Normal(mean_{i}, sdev) \\
+mean_{i} = a + b_{1}x_{i} + b_{2}x^2_{i} \\
+a \sim ~ Normal(178, 20) \\
+b_{1} \sim ~ Log-Normal(0, 1) \\
+b_{2} \sim ~ Normal(0, 1) \\
+sdev \sim ~ Uniform(0, 50)
+$$
+
+
+```{r}
+n <- 1e3
+
+a <- rnorm(n, 178, 20)
+b1 <- rlnorm(n, 0, 1)
+b2 <- rnorm(n, 0, 1)
+
+weight.seq <- seq(from = 25, to = 70, length.out = 100)
+```
+
+```{r}
+data.frame(a, b1, b2) %>% 
+  mutate(group = seq(n)) %>% 
+  expand(nesting(group, a, b1, b2),
+         weight = weight.seq) %>% 
+  mutate(height = a + b1*weight + b2*weight^2) %>% 
+  ggplot(aes(x = weight, y = height, group = group)) +
+  geom_line(alpha = 0.1) +
+  ylim(c(0, 250))
+
+```
+As we can see the priors do not look great lets try to improve the results 
+
+
+
+```{r}
+n <- 1e3
+
+a <- rnorm(n, -180, 10)
+b1 <- rnorm(n, 10, 5)
+b2 <- runif(n, -0.15, 0)
+weight.seq <- seq(from = 25, to = 70, length.out = 100)
+
+
+data.frame(a, b1, b2) %>% 
+  mutate(group = seq(n)) %>% 
+  expand(nesting(group, a, b1, b2),
+         weight = weight.seq) %>% 
+  mutate(height = a + b1*weight + b2*weight^2) %>% 
+  ggplot(aes(x = weight, y = height, group = group)) +
+  geom_line(alpha = 0.1) +
+  ylim(c(0, 300))
+```
+
+
+It turned out that it is very complicated to guess normal priors in this case
+The priors I set is not ideal but better then original one. 
+
+
+# 4H5. 
+Return to data(cherry_blossoms) and model the association between blossom date (doy)
+and March temperature (temp). Note that there are many missing values in both variables. You may consider a linear model, a polynomial, or a spline on temperature. 
+How well does temperature trend predict the blossom trend?
+
+
+first lets look at the relationship between doy and temp
+
+```{r}
+data(cherry_blossoms)
+cherry <- cherry_blossoms
+```
+
+```{r}
+ggplot(cherry, aes(x = temp, y = doy)) +
+  geom_point(alpha = 0.3)
+```
+
+the relationship appears to be linear but with the high variation
+
+lets try to fit linear model
+
+First, drop the missing values
+```{r}
+cherry <- cherry %>% 
+  filter(!is.na(doy), !is.na(temp))
+```
+
+
+
+
+```{r}
+cherry_lin_spec <- alist(
+  doy ~ dnorm(mu, sigma),
+  mu <- a + b * temp,
+  # a is the average day of the year when cherry blossom
+  a ~ dnorm(100, 25),
+  # b is the change in doy with 1 degree change in temp
+  # I expect negative relationship
+  b ~ dnorm(-2, 5),
+  sigma ~ dunif(0, 20)
+)
+
+cherry_lin_model <- quap(
+  cherry_lin_spec, data = cherry
+)
+```
+
+```{r}
+precis(cherry_lin_model)
+```
+
+```{r}
+# extract samples from the posterior
+post <- extract.samples(cherry_lin_model)
+
+temp.seq <- seq(from = min(cherry$temp) , to = max(cherry$temp) , length.out = 100)
+mu <- link(cherry_lin_model , data = data.frame(temp = temp.seq))
+
+# summarize the distribution of mu
+mu.mean <- apply(mu, 2, mean)
+mu.PI <- apply(mu, 2, PI, prob = 0.89)
+
+
+#prediction interval 
+sim.temp <- sim(cherry_lin_model, data = list(temp = temp.seq), n = 1e4)
+height.PI <- apply(sim.temp, 2, PI, prob = 0.89)
+
+# plot raw data
+plot(doy ~ temp, cherry, col = col.alpha(rangi2,0.5))
+
+# draw MAP line
+lines(temp.seq, mu.mean)
+
+# draw HPDI region for line
+shade(mu.PI, temp.seq)
+
+# draw PI region for simulated heights
+shade(height.PI, temp.seq)
+```
+
+
+
+# 4H8.
+The cherry blossom spline in the chapter used an intercept α, but technically it doesn’t require one. The first basis functions could substitute for the intercept. Try refitting the cherry blossom spline without the intercept. 
+What else about the model do you need to change to make this work?
+
+Lets start from the original spline model from the book
+```{r}
+library(splines)
+```
+
+
+```{r}
+data(cherry_blossoms)
+d <- cherry_blossoms
+
+
+d2 <- d[ complete.cases(d$doy) , ] # complete cases on doy
+num_knots <- 15
+knot_list <- quantile( d2$year , probs = seq(0, 1, length.out = num_knots) )
+
+
+B <- bs(d2$year,
+  knots = knot_list[-c(1,num_knots)],
+  degree = 3, intercept = TRUE)
+```
+
+```{r}
+cherry_splines_orig <- quap(
+  alist(
+    D ~ dnorm(mu, sigma) ,
+    mu <- a + B %*% w ,
+    a ~ dnorm(100, 10),
+    w ~ dnorm(0, 10),
+    sigma ~ dexp(1)
+  ), data = list(D = d2$doy, B = B) ,
+  start = list(w = rep(0, ncol(B) ))
+)
+```
+
+```{r}
+mu <- link(cherry_splines_orig)
+mu_PI <- apply(mu, 2, PI, 0.97)
+plot(d2$year, d2$doy, col = col.alpha(rangi2,0.3) , pch = 16)
+shade(mu_PI, d2$year, col = col.alpha("black", 0.3))
+```
+
+Lets try to make a model without an intercept 
+
+```{r}
+cherry_splines_no_intercept <- quap(
+  alist(
+    D ~ dnorm(mu, sigma),
+    mu <- B %*% w,
+    w ~ dnorm(0, 10),
+    sigma ~ dexp(1)
+  ), data = list(D = d2$doy, B = B) ,
+  start = list(w = rep(0, ncol(B) ))
+)
+```
+
+```{r}
+mu <- link(cherry_splines_no_intercept)
+mu_PI <- apply(mu, 2, PI, 0.97)
+plot(d2$year, d2$doy, col = col.alpha(rangi2,0.3) , pch = 16)
+shade(mu_PI, d2$year, col = col.alpha("black", 0.3))
+```
+
+The models appear to be quite simmilar but the one without intercept 
+seams to underestimate the datat in hte beggingin of the sample. 
+This might happen because the intersept in the first model is around 100
+but the priors for w are close to 0 
+If we make the wider priors for w the model should be the same as the original one 
+lets try this 
+
+
+
+```{r}
+cherry_splines_no_intercept_wide_w <- quap(
+  alist(
+    D ~ dnorm(mu, sigma),
+    mu <- B %*% w,
+    w ~ dnorm(0, 100),
+    sigma ~ dexp(1)
+  ), data = list(D = d2$doy, B = B) ,
+  start = list(w = rep(0, ncol(B) )),
+  control = list(maxit = 5000)
+)
+```
+
+```{r}
+mu <- link(cherry_splines_no_intercept_wide_w)
+mu_PI <- apply(mu, 2, PI, 0.97)
+plot(d2$year, d2$doy, col = col.alpha(rangi2,0.3) , pch = 16)
+shade(mu_PI, d2$year, col = col.alpha("black", 0.3))
+```
+
+
+With the very wide priors for w, model without intercept appears to be quite the
+same as the one with the intercept
