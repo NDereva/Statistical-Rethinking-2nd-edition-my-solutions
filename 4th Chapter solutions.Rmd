@@ -783,3 +783,4 @@ shade(mu_PI, d2$year, col = col.alpha("black", 0.3))
 
 With the very wide priors for w, model without intercept appears to be quite the
 same as the one with the intercept
+but in this way it becomes more computationally intensive. 
