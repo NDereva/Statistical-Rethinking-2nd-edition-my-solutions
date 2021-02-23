@@ -1,0 +1,124 @@
+---
+title: "Chapter 9 Book"
+author: "Mykola Dereva"
+date: "2/10/2021"
+output: html_document
+---
+
+```{r}
+library(rethinking)
+library(tidyverse)
+```
+
+```{r}
+data(rugged)
+d <- rugged
+d$log_gdp <- log(d$rgdppc_2000)
+dd <- d[ complete.cases(d$rgdppc_2000) , ]
+dd$log_gdp_std <- dd$log_gdp / mean(dd$log_gdp)
+dd$rugged_std <- dd$rugged / max(dd$rugged)
+dd$cid <- ifelse( dd$cont_africa==1 , 1 , 2 )
+```
+
+
+```{r}
+dat_slim <- list(
+  log_gdp_std = dd$log_gdp_std,
+  rugged_std = dd$rugged_std,
+  cid = as.integer( dd$cid )
+)
+str(dat_slim)
+```
+
+
+
+```{r}
+m9.1 <- ulam(
+  alist(
+    log_gdp_std ~ dnorm( mu , sigma ) ,
+    mu <- a[cid] + b[cid]*( rugged_std - 0.215 ) ,
+    a[cid] ~ dnorm( 1 , 0.1 ) ,
+    b[cid] ~ dnorm( 0 , 0.3 ) ,
+    sigma ~ dexp( 1 )
+  ) , data=dat_slim , chains = 1 
+  
+)
+```
+
+
+```{r}
+precis( m9.1 , depth=2 )
+```
+
+
+
+```{r}
+m9.1 <- ulam(
+    alist(
+    log_gdp_std ~ dnorm( mu , sigma ) ,
+    mu <- a[cid] + b[cid]*( rugged_std - 0.215 ) ,
+    a[cid] ~ dnorm( 1 , 0.1 ) ,
+    b[cid] ~ dnorm( 0 , 0.3 ) ,
+    sigma ~ dexp( 1 )
+  ) , data=dat_slim , chains = 4 , cores = 16)
+```
+
+```{r}
+precis( m9.1 , depth=2 )
+```
+
+
+```{r}
+show( m9.1 )
+```
+
+
+```{r}
+pairs(m9.1@stanfit)
+```
+
+
+```{r}
+traceplot(m9.1)
+```
+
+
+```{r}
+trankplot(m9.1)
+```
+
+
+```{r}
+y <- c(-1,1)
+set.seed(11)
+
+m9.2 <- ulam(
+  alist(
+    y ~ dnorm(mu, sigma) ,
+    mu <- alpha ,
+    alpha ~ dnorm(0, 1000) ,
+    sigma ~ dexp(0.0001)
+  ) , data = list(y = y) , chains = 3 )
+```
+
+
+
+```{r}
+precis( m9.2 )
+```
+
+
+
+```{r}
+pairs(m9.2@stanfit)
+```
+
+
+```{r}
+traceplot(m9.2, n_cols = 1)
+```
+
+```{r}
+trankplot(m9.2, n_cols = 1)
+```
+
