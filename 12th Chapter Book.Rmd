@@ -1,0 +1,234 @@
+---
+title: "Chapter 12th Book"
+author: "Mykola Dereva"
+date: "2/24/2021"
+output: html_document
+---
+
+```{r}
+library(rethinking)
+```
+
+Beta distribution
+
+```{r}
+pbar <- 0.5   # Average probability
+theta <- 5    # Shape parameter (how spread out the distribution is)
+
+curve(dbeta2(x,pbar,theta), from=0, to=1,
+        xlab="probability", ylab="Density")
+```
+
+
+
+```{r}
+data(UCBadmit)
+d <- UCBadmit
+
+d$gid <- ifelse( d$applicant.gender=="male" , 1L , 2L )
+dat <- list( A=d$admit , N=d$applications , gid=d$gid )
+```
+
+
+This model from the book fails to converge. 
+I dont know what is the issue
+```{r}
+m12.1 <- ulam(
+    alist(
+        A ~ dbetabinom( N , pbar , theta ),
+        logit(pbar) <- a[gid],
+        a[gid] ~ dnorm( 0 , 1.5 ),
+        transpars> theta <<- phi + 2.0,
+        phi ~ dexp(1)
+    ), data=dat , chains=4)
+```
+
+```{r}
+precis(m12.1, depth = 2)
+```
+
+
+```{r}
+post <- extract.samples( m12.1 )
+post$da <- post$a[,1] - post$a[,2]
+precis( post , depth=2 )
+```
+
+
+```{r}
+rm(list = ls())
+```
+
+
+
+```{r}
+library(rethinking)
+data(Kline)
+d <- Kline
+d$P <- standardize( log(d$population) )
+d$contact_id <- ifelse( d$contact=="high" , 2L , 1L )
+
+
+dat2 <- list(T = d$total_tools,
+             P = d$population,
+             cid = d$contact_id )
+```
+
+
+```{r}
+m12.2 <- ulam(
+    alist(
+        T ~ dgampois(lambda, phi),
+        lambda <- exp(a[cid])*P^b[cid] / g,
+        a[cid] ~ dnorm(1,1),
+        b[cid] ~ dexp(1),
+        g ~ dexp(1),
+        phi ~ dexp(1)
+    ), data=dat2 , chains=4, cores=4, log_lik=TRUE )
+```
+
+```{r}
+precis(m12.2, depth = 2)
+```
+
+
+
+```{r}
+# define parameters
+prob_drink <- 0.2 # 20% of days
+rate_work <- 1    # average 1 manuscript per day
+
+# sample one year of production
+N <- 365
+
+# simulate days monks drink
+set.seed(365)
+drink <- rbinom( N , 1 , prob_drink )
+
+# simulate manuscripts completed
+y <- (1-drink)*rpois( N , rate_work )
+```
+
+
+
+```{r}
+simplehist( y , xlab="manuscripts completed" , lwd=4 )
+zeros_drink <- sum(drink)
+zeros_work <- sum(y==0 & drink==0)
+zeros_total <- sum(y==0)
+lines( c(0,0) , c(zeros_work,zeros_total) , lwd=4 , col=rangi2 )
+```
+
+
+```{r}
+m12.3 <- ulam(
+    alist(
+        y ~ dzipois( p , lambda ),
+        logit(p) <- ap,
+        log(lambda) <- al,
+        ap ~ dnorm( -1.5 , 1 ),
+        al ~ dnorm( 1 , 0.5 )
+    ) , data=list(y=y) , chains=4 )
+```
+
+```{r}
+precis(m12.3)
+```
+
+```{r}
+post <- extract.samples( m12.3 )
+mean( inv_logit( post$ap ) ) # probability drink
+mean( exp( post$al ) )       # rate finish manuscripts, when not drinking
+```
+
+
+
+```{r}
+library(rethinking)
+
+data(Trolley)
+d <- Trolley
+```
+
+
+```{r}
+simplehist( d$response , xlim=c(1,7) , xlab="response" )
+
+```
+
+
+
+```{r}
+# discrete proportion of each response value
+pr_k <- table( d$response ) / nrow(d)
+
+# cumsum converts to cumulative proportions
+cum_pr_k <- cumsum( pr_k )
+
+# plot
+plot( 1:7 , cum_pr_k , type="b" , xlab="response" ,
+ylab="cumulative proportion" , ylim=c(0,1) )
+```
+
+
+
+```{r}
+logit <- function(x) log(x/(1-x)) # convenience function
+round( lco <- logit( cum_pr_k ) , 2 )
+```
+
+
+
+```{r}
+m12.4 <- ulam(
+    alist(
+        R ~ dordlogit( 0 , cutpoints ),
+        cutpoints ~ dnorm( 0 , 1.5 )
+    ) , data=list( R=d$response ), chains=4 , cores=16 )
+```
+
+```{r}
+precis(m12.4, depth = 2)
+```
+
+
+```{r}
+round( inv_logit(coef(m12.4)) , 3 )
+```
+
+
+
+
+```{r}
+dat <- list(
+    R = d$response,
+    A = d$action,
+    I = d$intention,
+    C = d$contact )
+
+
+m12.5 <- ulam(
+    alist(
+        R ~ dordlogit( phi , cutpoints ),
+        phi <- bA*A + bC*C + BI*I ,
+        BI <- bI + bIA*A + bIC*C ,
+        c(bA,bI,bC,bIA,bIC) ~ dnorm( 0 , 0.5 ),
+        cutpoints ~ dnorm( 0 , 1.5 )
+    ) , data=dat , chains=4 , cores=16 )
+
+```
+
+```{r}
+precis(m12.5)
+```
+
+
+```{r}
+plot( precis(m12.5) , xlim=c(-1.4,0) )
+```
+
+
+
+
+
+
