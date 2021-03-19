@@ -1,0 +1,233 @@
+---
+title: "3th Chapter BRMS"
+author: "Mykola Dereva"
+date: "3/19/2021"
+output: html_document
+---
+
+# 3.1 Sampling from a grid-approximation
+
+```{r}
+library(tidyverse)
+library(patchwork)
+```
+
+
+```{r}
+n <- 1000
+n_success <- 6
+n_trials  <- 9
+
+(
+  d <-
+  tibble(p_grid = seq(from = 0, to = 1, length.out = n),
+         # note we're still using a flat uniform prior
+         prior  = 1) %>% 
+  mutate(likelihood = dbinom(n_success, size = n_trials, prob = p_grid)) %>% 
+  mutate(posterior = (likelihood * prior) / sum(likelihood * prior))
+)
+```
+
+
+
+```{r}
+n_samples <- 1e4
+
+# make it reproducible
+set.seed(3)
+
+samples <-
+  d %>% 
+  slice_sample(n = n_samples, weight_by = posterior, replace = T)
+
+glimpse(samples)
+```
+
+
+```{r}
+p1 <- samples %>% 
+  mutate(sample_number = 1:n()) %>% 
+  
+  ggplot(aes(x = sample_number, y = p_grid)) +
+  geom_point(alpha = 1/10) +
+  scale_y_continuous("proportion of water (p)", limits = c(0, 1)) +
+  xlab("sample number")
+```
+
+
+```{r}
+p2 <- samples %>% 
+  ggplot(aes(x = p_grid)) +
+  geom_density(fill = "black") +
+  scale_x_continuous("proportion of water (p)", limits = c(0, 1))
+```
+
+```{r}
+p1 + p2
+```
+
+
+
+## 3.2 Sampling to summarise 
+
+
+```{r}
+samples %>% 
+  summarise(sum = mean(p_grid < .5))
+
+```
+
+p between 0.5 and 0.75
+```{r}
+samples %>% 
+  filter(p_grid > .5 & p_grid < .75) %>% 
+  summarise(sum = n() / n_samples)
+```
+
+
+```{r}
+9# upper left panel
+p1 <-
+  d %>% 
+  ggplot(aes(x = p_grid, y = posterior)) +
+  geom_line() +
+  geom_area(data = d %>% filter(p_grid < .5)) +
+  labs(x = "proportion of water (p)",
+       y = "density")
+
+# upper right panel
+p2 <-
+  d %>% 
+  ggplot(aes(x = p_grid, y = posterior)) +
+  geom_line() +
+  # note this next line is the only difference in code from the last plot
+  geom_area(data = d %>% filter(p_grid < .75 & p_grid > .5)) +
+  labs(x = "proportion of water (p)",
+       y = "density")
+
+
+p1 + p2
+```
+
+
+```{r}
+q_80 <- samples %>% 
+  pull(p_grid) %>% 
+  quantile(prob = .8)
+```
+
+
+
+```{r}
+(q_10_and_90 <- quantile(samples$p_grid, prob = c(.1, .9)))
+```
+
+
+```{r}
+# lower left panel
+p1 <-
+  d %>% 
+  ggplot(aes(x = p_grid, y = posterior)) +
+  geom_line() +
+  geom_area(data = d %>% filter(p_grid < q_80)) +
+  annotate(geom = "text",
+           x = .25, y = .0025,
+           label = "lower 80%") +
+  labs(x = "proportion of water (p)",
+       y = "density")
+
+# lower right panel
+p2 <-
+  d %>% 
+  ggplot(aes(x = p_grid, y = posterior)) +
+  geom_line() +
+  geom_area(data = d %>% filter(p_grid > q_10_and_90[1] & p_grid < q_10_and_90[2])) +
+  annotate(geom = "text",
+           x = .25, y = .0025,
+           label = "middle 80%") +
+  labs(x = "proportion of water (p)",
+       y = "density")
+
+p1 + p2
+```
+
+
+```{r}
+library(tidybayes)
+
+median_qi(samples$p_grid, .width = .5)
+```
+
+
+```{r}
+median_qi(samples$p_grid, .width = c(.5, .8, .99))
+```
+
+```{r}
+rethinking::HPDI(samples$p_grid, prob = .5)
+```
+
+```{r}
+mode_hdi(samples$p_grid, .width = .5)
+```
+
+```{r}
+hdi(samples$p_grid, .width = .5)
+```
+
+
+
+
+```{r}
+# here we update the `dbinom()` parameters
+n_success <- 3
+n_trials  <- 3
+
+# update `d`
+d <-
+  d %>% 
+  mutate(likelihood = dbinom(n_success, size = n_trials, prob = p_grid)) %>% 
+  mutate(posterior  = (likelihood * prior) / sum(likelihood * prior))
+
+# make the next part reproducible
+set.seed(3)
+
+# here's our new samples tibble
+(
+  samples <-
+    d %>% 
+    slice_sample(n = n_samples, weight_by = posterior, replace = T)
+)
+```
+
+
+
+```{r}
+# lower left panel
+p1 <-
+  d %>% 
+  ggplot(aes(x = p_grid, y = posterior)) +
+  # check out our sweet `qi()` indexing
+  geom_area(data = d %>% filter(p_grid > qi(samples$p_grid, .width = .5)[1] & 
+                                  p_grid < qi(samples$p_grid, .width = .5)[2]),
+            fill = "grey75") +
+  geom_line() +
+  labs(subtitle = "50% Percentile Interval",
+       x = "proportion of water (p)",
+       y = "density")
+
+# lower right panel
+p2 <-
+  d %>% 
+  ggplot(aes(x = p_grid, y = posterior)) +
+  geom_area(data = . %>% filter(p_grid > hdi(samples$p_grid, .width = .5)[1] & 
+                                  p_grid < hdi(samples$p_grid, .width = .5)[2]),
+            fill = "grey75") +
+  geom_line() +
+  labs(subtitle = "50% HPDI",
+       x = "proportion of water (p)",
+       y = "density")
+# combine!
+p1 | p2
+```
+

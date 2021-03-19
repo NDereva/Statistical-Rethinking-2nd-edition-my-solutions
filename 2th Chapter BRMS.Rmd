@@ -1,0 +1,290 @@
+---
+title: "2th Chapter BRMS"
+author: "Mykola Dereva"
+date: "3/16/2021"
+output: html_document
+---
+
+
+```{r}
+library(tidyverse)
+```
+
+
+
+```{r}
+d <-
+  tibble(p1 = 0,
+         p2 = rep(1:0, times = c(1, 3)),
+         p3 = rep(1:0, times = c(2, 2)),
+         p4 = rep(1:0, times = c(3, 1)),
+         p5 = 1)
+
+head(d)
+```
+
+
+```{r}
+d %>% 
+  set_names(1:5) %>% 
+  mutate(x = 1:4) %>% 
+  pivot_longer(-x, names_to = "possibility") %>% 
+  mutate(value = value %>% as.character()) %>% 
+  
+  ggplot(aes(x = x, y = possibility, fill = value)) +
+  geom_point(shape = 21, size = 15) +
+  scale_fill_manual(values = c("white", "navy")) +
+  scale_x_discrete(NULL, breaks = NULL) +
+  theme(legend.position = "none")
+```
+
+
+
+```{r}
+tibble(draw    = 1:3,
+       marbles = 4) %>% 
+  mutate(possibilities = marbles ^ draw) 
+```
+
+
+
+```{r}
+(
+  d <-
+  tibble(position = c((1:4^1) / 4^0, 
+                      (1:4^2) / 4^1, 
+                      (1:4^3) / 4^2),
+         draw     = rep(1:3, times = c(4^1, 4^2, 4^3)),
+         fill     = rep(c("b", "w"), times = c(1, 3)) %>% 
+           rep(., times = c(4^0 + 4^1 + 4^2)))
+)
+```
+
+
+```{r}
+d %>% 
+  ggplot(aes(x = position, y = draw, fill = fill)) +
+  geom_point(shape = 21, size = 3) +
+  scale_fill_manual(values  = c("navy", "white")) +
+  scale_y_continuous(breaks = 1:3) +
+  theme(legend.position = "none",
+        panel.grid.minor = element_blank())
+```
+
+
+```{r}
+# these will connect the dots from the first and second draws
+(
+  lines_1 <-
+  tibble(x    = rep((1:4), each = 4),
+         xend = ((1:4^2) / 4),
+         y    = 1,
+         yend = 2)
+  )
+```
+
+
+```{r}
+# these will connect the dots from the second and third draws
+(
+  lines_2 <-
+  tibble(x    = rep(((1:4^2) / 4), each = 4),
+         xend = (1:4^3) / (4^2),
+         y    = 2,
+         yend = 3)
+  )
+```
+
+```{r}
+d %>% 
+  ggplot(aes(x = position, y = draw)) +
+  geom_segment(data = lines_1,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               size  = 1/3) +
+  geom_segment(data = lines_2,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               size  = 1/3) +
+  geom_point(aes(fill = fill),
+             shape = 21, size = 3) +
+  scale_fill_manual(values  = c("navy", "white")) +
+  scale_y_continuous(breaks = 1:3) +
+  theme(legend.position  = "none",
+        panel.grid.minor = element_blank())
+```
+
+
+```{r}
+d <-
+  d %>% 
+  mutate(denominator = ifelse(draw == 1, .5,
+                              ifelse(draw == 2, .5 / 4,
+                                     .5 / 4^2))) %>% 
+  mutate(position = position - denominator)
+
+d
+```
+
+
+```{r}
+(
+  lines_1 <-
+  lines_1 %>% 
+  mutate(x    = x - 0.5,
+         xend = xend - 0.5 / 4^1)
+)
+```
+
+
+```{r}
+(
+  lines_2 <-
+  lines_2 %>% 
+  mutate(x    = x - 0.5 / 4^1,
+         xend = xend - 0.5 / 4^2)
+)
+```
+
+
+```{r}
+d %>% 
+  ggplot(aes(x = position, y = draw)) +
+  geom_segment(data = lines_1,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               size  = 1/3) +
+  geom_segment(data = lines_2,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               size  = 1/3) +
+  geom_point(aes(fill = fill),
+             shape = 21, size = 3) +
+  scale_fill_manual(values  = c("navy", "white")) +
+  scale_y_continuous(breaks = 1:3) +
+  theme(legend.position  = "none",
+        panel.grid.minor = element_blank())
+```
+
+
+```{r}
+d %>% 
+  ggplot(aes(x = position, y = draw)) +
+  geom_segment(data = lines_1,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               size = 1/3) +
+  geom_segment(data = lines_2,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend),
+               size = 1/3) +
+  geom_point(aes(fill = fill),
+             shape = 21, size = 4) +
+  scale_fill_manual(values = c("navy", "white")) +
+  scale_x_continuous(NULL, limits = c(0, 4), breaks = NULL) +
+  scale_y_continuous(NULL, limits = c(0.75, 3), breaks = NULL) +
+  coord_polar() +
+  theme(legend.position = "none",
+        panel.grid = element_blank())
+```
+
+
+
+```{r}
+lines_1 <-
+  lines_1 %>% 
+  mutate(remain = c(rep(0:1, times = c(1, 3)),
+                    rep(0,   times = 4 * 3)))
+lines_2 <-
+  lines_2 %>% 
+  mutate(remain = c(rep(0,   times = 4),
+                    rep(1:0, times = c(1, 3)) %>% rep(., times = 3),
+                    rep(0,   times = 12 * 4)))
+d <-
+  d %>% 
+  mutate(remain = c(rep(1:0, times = c(1, 3)),
+                    rep(0:1, times = c(1, 3)),
+                    rep(0,   times = 4 * 4),
+                    rep(1:0, times = c(1, 3)) %>% rep(., times = 3),
+                    rep(0,   times = 12 * 4))) 
+# finally, the plot:
+d %>% 
+  ggplot(aes(x = position, y = draw)) +
+  geom_segment(data = lines_1,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend,
+                   alpha = remain %>% as.character()),
+               size = 1/3) +
+  geom_segment(data = lines_2,
+               aes(x = x, xend = xend,
+                   y = y, yend = yend,
+                   alpha = remain %>% as.character()),
+               size = 1/3) +
+  geom_point(aes(fill = fill, alpha = remain %>% as.character()),
+             shape = 21, size = 4) +
+  # it's the alpha parameter that makes elements semitransparent
+  scale_fill_manual(values = c("navy", "white")) +
+  scale_alpha_manual(values = c(1/5, 1)) +
+  scale_x_continuous(NULL, limits = c(0, 4), breaks = NULL) +
+  scale_y_continuous(NULL, limits = c(0.75, 3), breaks = NULL) +
+  coord_polar() +
+  theme(legend.position = "none",
+        panel.grid = element_blank())
+```
+
+
+## Section 2.2
+
+
+```{r}
+(d <- tibble(toss = c("w", "l", "w", "w", "w", "l", "w", "l", "w")))
+```
+
+
+```{r}
+(
+  d <-
+  d %>% 
+  mutate(n_trials  = 1:9,
+         n_success = cumsum(toss == "w"))
+  )
+```
+
+
+
+```{r}
+sequence_length <- 50
+
+d %>% 
+  expand(nesting(n_trials, toss, n_success), 
+         p_water = seq(from = 0, to = 1, length.out = sequence_length)) %>% 
+  group_by(p_water) %>% 
+
+  mutate(lagged_n_trials  = lag(n_trials, k = 1),
+         lagged_n_success = lag(n_success, k = 1)) %>% 
+  ungroup() %>% 
+  mutate(prior      = ifelse(n_trials == 1, .5,
+                             dbinom(x    = lagged_n_success, 
+                                    size = lagged_n_trials, 
+                                    prob = p_water)),
+         likelihood = dbinom(x    = n_success, 
+                             size = n_trials, 
+                             prob = p_water),
+         strip      = str_c("n = ", n_trials)) %>% 
+  # the next three lines allow us to normalize the prior and the likelihood, 
+  # putting them both in a probability metric 
+  group_by(n_trials) %>% 
+  mutate(prior      = prior / sum(prior),
+         likelihood = likelihood / sum(likelihood)) %>%   
+  
+  # plot!
+  ggplot(aes(x = p_water)) +
+  geom_line(aes(y = prior), 
+            linetype = 2) +
+  geom_line(aes(y = likelihood)) +
+  scale_x_continuous("proportion water", breaks = c(0, .5, 1)) +
+  scale_y_continuous("plausibility", breaks = NULL) +
+  theme(panel.grid = element_blank()) +
+  facet_wrap(~strip, scales = "free_y")
+```
+
