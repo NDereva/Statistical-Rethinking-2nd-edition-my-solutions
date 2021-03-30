@@ -615,3 +615,519 @@ predict(b5.3_A,
   theme(panel.grid = element_blank()) 
 ```
 
+
+
+
+```{r}
+data(milk, package = "rethinking")
+d <- milk
+rm(milk)
+
+glimpse(d)
+```
+
+
+
+```{r}
+d <-
+  d %>% 
+  mutate(kcal.per.g_s     = (kcal.per.g - mean(kcal.per.g)) / sd(kcal.per.g), 
+         log_mass_s       = (log(mass) - mean(log(mass))) / sd(log(mass)), 
+         neocortex.perc_s = (neocortex.perc - mean(neocortex.perc, na.rm = T)) / sd(neocortex.perc, na.rm = T))
+```
+
+
+
+```{r}
+dcc <- 
+  d %>%
+  drop_na(ends_with("_s"))
+
+# how many rows did we drop?
+nrow(d) - nrow(dcc)
+```
+
+
+
+```{r}
+b5.5_draft <- 
+  brm(data = dcc, 
+      family = gaussian,
+      kcal.per.g_s ~ 1 + neocortex.perc_s,
+      prior = c(prior(normal(0, 1), class = Intercept),
+                prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      sample_prior = T,
+      file = "fits/b05.05_draft")
+```
+
+
+
+```{r}
+set.seed(5)
+
+prior_samples(b5.5_draft) %>% 
+  slice_sample(n = 50) %>% 
+  rownames_to_column() %>% 
+  expand(nesting(rowname, Intercept, b),
+         neocortex.perc_s = c(-2, 2)) %>% 
+  mutate(kcal.per.g_s = Intercept + b * neocortex.perc_s) %>% 
+  
+  ggplot(aes(x = neocortex.perc_s, y = kcal.per.g_s)) +
+  geom_line(aes(group = rowname),
+            color = "firebrick", alpha = .4) +
+  coord_cartesian(ylim = c(-2, 2)) +
+  labs(x = "neocortex percent (std)",
+       y = "kilocal per g (std)",
+       subtitle = "Intercept ~ dnorm(0, 1)\nb ~ dnorm(0, 1)") +
+  theme_bw() +
+  theme(panel.grid = element_blank()) 
+```
+
+
+
+```{r}
+b5.5 <- 
+  brm(data = dcc, 
+      family = gaussian,
+      kcal.per.g_s ~ 1 + neocortex.perc_s,
+      prior = c(prior(normal(0, 0.2), class = Intercept),
+                prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      sample_prior = T,
+      file = "fits/b05.05")
+```
+
+```{r}
+set.seed(5)
+
+prior_samples(b5.5) %>% 
+  slice_sample(n = 50) %>% 
+  rownames_to_column() %>% 
+  expand(nesting(rowname, Intercept, b),
+         neocortex.perc_s = c(-2, 2)) %>% 
+  mutate(kcal.per.g_s = Intercept + b * neocortex.perc_s) %>% 
+  
+  ggplot(aes(x = neocortex.perc_s, y = kcal.per.g_s)) +
+  geom_line(aes(group = rowname),
+            color = "firebrick", alpha = .4) +
+  coord_cartesian(ylim = c(-2, 2)) +
+  labs(x = "neocortex percent (std)",
+       y = "kilocal per g (std)",
+       subtitle = "Intercept ~ dnorm(0, 0.2)\nb ~ dnorm(0, 0.5)") +
+  theme_bw() +
+  theme(panel.grid = element_blank()) 
+```
+
+
+
+```{r}
+b5.6 <- 
+  brm(data = dcc, 
+      family = gaussian,
+      kcal.per.g_s ~ 1 + log_mass_s,
+      prior = c(prior(normal(0, 0.2), class = Intercept),
+                prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      sample_prior = T,
+      file = "fits/b05.06")
+```
+
+
+```{r}
+print(b5.6)
+```
+
+
+```{r}
+nd <- tibble(log_mass_s = seq(from = -2.5, to = 2.5, length.out = 30))
+
+fitted(b5.6, 
+       newdata = nd,
+       probs = c(.025, .975, .25, .75)) %>%
+  data.frame() %>%
+  bind_cols(nd) %>% 
+  
+  ggplot(aes(x = log_mass_s, y = Estimate)) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5),
+              fill = "firebrick", alpha = 1/5) +
+  geom_smooth(aes(ymin = Q25, ymax = Q75),
+              stat = "identity",
+              fill = "firebrick4", color = "firebrick4", alpha = 1/5, size = 1/2) +
+  geom_point(data = dcc, 
+             aes(y = kcal.per.g_s),
+             size = 2, color = "firebrick4") +
+  coord_cartesian(xlim = range(dcc$log_mass_s), 
+                  ylim = range(dcc$kcal.per.g_s)) +
+  labs(x = "log body mass (std)",
+       y = "kilocal per g (std)") +
+  theme_bw() +
+  theme(panel.grid = element_blank())
+```
+
+
+
+```{r}
+b5.7 <- 
+  brm(data = dcc, 
+      family = gaussian,
+      kcal.per.g_s ~ 1 + neocortex.perc_s + log_mass_s,
+      prior = c(prior(normal(0, 0.2), class = Intercept),
+                prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.07")
+```
+
+
+```{r}
+print(b5.7)
+```
+
+
+
+```{r}
+library(GGally)
+
+dcc %>% 
+  select(ends_with("_s")) %>% 
+  ggpairs()
+```
+
+
+
+Conterfactual plots 
+
+```{r}
+nd <- tibble(neocortex.perc_s = seq(from = -2.5, to = 2, length.out = 30),
+             log_mass_s       = 0)
+
+p1 <-
+  fitted(b5.7, 
+         newdata = nd,
+         probs = c(.025, .975, .25, .75)) %>%
+  data.frame() %>%
+  bind_cols(nd) %>% 
+  
+  ggplot(aes(x = neocortex.perc_s, y = Estimate)) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5),
+              fill = "firebrick", alpha = 1/5) +
+  geom_smooth(aes(ymin = Q25, ymax = Q75),
+              stat = "identity",
+              fill = "firebrick4", color = "firebrick4", alpha = 1/5, size = 1/2) +
+  coord_cartesian(xlim = range(dcc$neocortex.perc_s), 
+                  ylim = range(dcc$kcal.per.g_s)) +
+  labs(subtitle = "Counterfactual holding M = 0", 
+       x = "neocortex percent (std)",
+       y = "kilocal per g (std)")
+```
+
+
+```{r}
+nd <- tibble(log_mass_s       = seq(from = -2.5, to = 2.5, length.out = 30),
+             neocortex.perc_s = 0)
+
+p2 <-
+  fitted(b5.7, 
+         newdata = nd,
+         probs = c(.025, .975, .25, .75)) %>%
+  data.frame() %>%
+  bind_cols(nd) %>% 
+  
+  ggplot(aes(x = log_mass_s, y = Estimate)) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5),
+              fill = "firebrick", alpha = 1/5) +
+  geom_smooth(aes(ymin = Q25, ymax = Q75),
+              stat = "identity",
+              fill = "firebrick4", color = "firebrick4", alpha = 1/5, size = 1/2) +
+  coord_cartesian(xlim = range(dcc$log_mass_s), 
+                  ylim = range(dcc$kcal.per.g_s)) +
+  labs(subtitle = "Counterfactual holding N = 0",
+       x = "log body mass (std)",
+       y = "kilocal per g (std)")
+
+```
+
+
+```{r}
+# combine
+p1 + p2 + 
+  plot_annotation(title = "Figure 5.9 [bottom row]. Milk energy and neocortex among primates.") &
+  theme_bw() &
+  theme(panel.grid = element_blank())
+```
+
+
+
+## Catigorical variables 
+
+```{r}
+data(Howell1, package = "rethinking")
+d <- Howell1
+rm(Howell1)
+```
+
+```{r}
+d %>% glimpse()
+```
+
+
+```{r}
+set.seed(5)
+
+prior <-
+  tibble(mu_female = rnorm(1e4, mean = 178, sd = 20)) %>% 
+  mutate(mu_male = mu_female + rnorm(1e4, mean = 0, sd = 10))
+
+prior %>% 
+  pivot_longer(everything()) %>% 
+  group_by(name) %>% 
+  summarise(mean = mean(value),
+            sd   = sd(value),
+            ll   = quantile(value, prob = .025),
+            ul   = quantile(value, prob = .975)) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+
+```{r}
+prior %>% 
+  pivot_longer(everything()) %>% 
+  ggplot(aes(x = value, fill = name, color = name)) +
+  geom_density(size = 2/3, alpha = 0.25) +
+  scale_fill_manual(NULL, values = c("firebrick4", "black")) +
+  scale_color_manual(NULL, values = c("firebrick4", "black")) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab("prior predictive distribution for our dummy groups") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = c(.82, .83))
+```
+
+
+```{r}
+d <-
+  d %>% 
+  mutate(sex = ifelse(male == 1, 2, 1))
+
+head(d)
+```
+
+
+```{r}
+d <-
+  d %>% 
+  mutate(sex = factor(sex))
+```
+
+
+```{r}
+b5.8 <- 
+  brm(data = d, 
+      family = gaussian,
+      height ~ 0 + sex,   # 0 means that we have separate intercept for each sex
+      prior = c(prior(normal(178, 20), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.08")
+```
+```{r}
+print(b5.8)
+```
+
+
+```{r}
+library(tidybayes)
+
+posterior_samples(b5.8) %>% 
+  mutate(diff_fm = b_sex1 - b_sex2) %>% 
+  pivot_longer(everything()) %>% 
+  filter(name != "lp__") %>% 
+  group_by(name) %>% 
+  mean_qi(value, .width = .95)
+```
+
+
+
+## Multiple categories 
+
+
+```{r}
+data(milk, package = "rethinking")
+d <- milk
+rm(milk)
+```
+
+```{r}
+d %>% glimpse()
+```
+
+```{r}
+d %>% distinct(clade)
+```
+
+
+
+```{r}
+d <-
+  d %>% 
+  mutate(kcal.per.g_s = (kcal.per.g - mean(kcal.per.g)) / sd(kcal.per.g))
+```
+
+
+
+```{r}
+b5.9 <- 
+  brm(data = d, 
+      family = gaussian,
+      kcal.per.g_s ~ 0 + clade,
+      prior = c(prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.09")
+```
+
+
+```{r}
+print(b5.9)
+```
+
+
+```{r}
+mcmc_plot(b5.9, pars = "^b_")
+```
+
+
+
+```{r}
+library(bayesplot)
+
+color_scheme_set("red")
+
+post <- posterior_samples(b5.9)
+
+post %>% 
+  select(starts_with("b_")) %>% 
+  mcmc_intervals(prob = .5,
+                 point_est = "median") +
+  labs(title = "My fancy bayesplot-based coefficient plot") +
+  theme_bw() +
+  theme(axis.text.y = element_text(hjust = 0),
+        axis.ticks.y = element_blank(),
+        panel.grid = element_blank())
+```
+
+
+
+```{r}
+library(tidybayes)
+
+post %>% 
+  select(starts_with("b")) %>% 
+  set_names(distinct(d, clade) %>% arrange(clade) %>% pull()) %>% 
+  pivot_longer(everything()) %>% 
+  
+  ggplot(aes(x = value, y = reorder(name, value))) +  # note how we used `reorder()` to arrange the coefficients
+  geom_vline(xintercept = 0, color = "firebrick4", alpha = 1/10) +
+  stat_pointinterval(point_interval = mode_hdi, .width = .89, 
+                     size = 1, color = "firebrick4") +
+  labs(title = "My tidybayes-based coefficient plot",
+       x = "expected kcal (std)", 
+       y = NULL) +
+  theme_bw() +
+  theme(axis.text.y = element_text(hjust = 0),
+        axis.ticks.y = element_blank(),
+        panel.grid = element_blank())
+```
+
+
+
+```{r}
+houses <- c("Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin")
+
+set.seed(63)
+d <-
+  d %>% 
+  mutate(house = sample(rep(houses, each = 8), size = n()))
+```
+
+
+
+```{r}
+b5.10 <- 
+  brm(data = d, 
+      family = gaussian,
+      kcal.per.g_s ~ 0 + clade + house,
+      prior = c(prior(normal(0, 0.5), class = b),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.10")
+```
+
+
+```{r}
+print(b5.10)
+```
+
+Here one of the houses got dropped 
+for details check: https://bookdown.org/content/4857/the-many-variables-the-spurious-waffles.html#categorical-variables 
+
+To have intercept for each variable we have to use nonlinear brms syntax 
+
+```{r}
+b5.11 <- 
+  brm(data = d, 
+      family = gaussian,
+      bf(kcal.per.g_s ~ 0 + a + h, 
+         a ~ 0 + clade,                # here 0 for each group of categorical
+         h ~ 0 + house,
+         nl = TRUE),
+      prior = c(prior(normal(0, 0.5), nlpar = a),
+                prior(normal(0, 0.5), nlpar = h),
+                prior(exponential(1), class = sigma)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 5,
+      file = "fits/b05.11")
+```
+
+```{r}
+print(b5.11)
+```
+
+Here we have 4 coefs for clade and 4 for house, as we expected 
+
+
+```{r}
+posterior_samples(b5.11) %>% 
+  pivot_longer(starts_with("b_")) %>% 
+  mutate(name = str_remove(name, "b_") %>% 
+           str_remove(., "clade") %>% 
+           str_remove(., "house") %>% 
+           str_replace(., "World", " World ")) %>% 
+  separate(name, into = c("predictor", "level"), sep = "_") %>% 
+  mutate(predictor = if_else(predictor == "a", "predictor: clade", "predictor: house")) %>% 
+  
+  ggplot(aes(x = value, y = reorder(level, value))) +  # note how we used `reorder()` to arrange the coefficients
+  geom_vline(xintercept = 0, color = "firebrick4", alpha = 1/10) +
+  stat_pointinterval(point_interval = mode_hdi, .width = .89, 
+                     size = 1, color = "firebrick4") +
+  labs(x = "expected kcal (std)", 
+       y = NULL) +
+  theme_bw() +
+  theme(axis.text.y = element_text(hjust = 0),
+        axis.ticks.y = element_blank(),
+        panel.grid = element_blank(),
+        strip.background = element_blank()) +
+  facet_wrap(~ predictor, scales = "free_y")
+```
+
