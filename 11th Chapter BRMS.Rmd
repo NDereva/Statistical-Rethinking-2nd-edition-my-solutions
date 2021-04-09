@@ -1,0 +1,919 @@
+---
+title: "11th Chapter BRMS"
+author: "Mykola Dereva"
+date: "4/9/2021"
+output: html_document
+---
+
+```{r}
+rm(list = ls())
+```
+
+```{r}
+data(chimpanzees, package = "rethinking")
+d <- chimpanzees
+rm(chimpanzees)
+```
+
+
+```{r}
+library(tidyverse)
+library(flextable)
+
+d %>% 
+  distinct(prosoc_left, condition) %>% 
+  mutate(description = c("Two food items on right and no partner",
+                         "Two food items on left and no partner",
+                         "Two food items on right and partner present",
+                         "Two food items on left and partner present")) %>% 
+  print()
+```
+
+
+```{r}
+d <-
+  d %>% 
+  mutate(treatment = factor(1 + prosoc_left + 2 * condition)) %>% 
+  # this will come in handy, later
+  mutate(labels = factor(treatment,
+                         levels = 1:4,
+                         labels = c("r/n", "l/n", "r/p", "l/p")))
+```
+
+
+
+```{r}
+d %>% 
+  count(condition, treatment, prosoc_left)
+```
+
+```{r}
+library(brms)
+```
+
+
+```{r}
+library(ggthemes)
+library(wesanderson)
+
+theme_set(
+  theme_default())
+```
+
+
+```{r}
+b11.1 <-
+  brm(data = d, 
+      family = binomial,
+      pulled_left | trials(1) ~ 1,
+      prior(normal(0, 10), class = Intercept),
+      seed = 11,
+      sample_prior = TRUE,
+      file = "fits/b11.01")
+```
+
+
+Prior predictive plotting 
+
+```{r}
+prior_samples(b11.1) %>% 
+  mutate(p = inv_logit_scaled(Intercept)) %>% 
+  
+  ggplot(aes(x = p)) +
+  geom_density(fill = wes_palette("Moonrise2")[1], 
+               size = 0,
+               adjust = 0.1) +  # adjust bandwidth
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab("prior prob pull left")
+```
+
+
+
+
+```{r}
+b11.1b <-
+  brm(data = d, 
+      family = binomial,
+      pulled_left | trials(1) ~ 1,
+      prior(normal(0, 1.5), class = Intercept),
+      seed = 11,
+      sample_prior = TRUE,
+      file = "fits/b11.01b")
+```
+
+
+
+```{r}
+# wrangle
+bind_rows(prior_samples(b11.1),
+          prior_samples(b11.1b)) %>% 
+  mutate(p = inv_logit_scaled(Intercept),
+         w = factor(rep(c(10, 1.5), each = n() / 2), # split p column into halves and make it as factors
+                    levels = c(10, 1.5))) %>% 
+  
+  # plot
+  ggplot(aes(x = p, fill = w)) +
+  geom_density(size = 0, alpha = 3/4, adjust = 0.1) +
+  scale_fill_manual(expression(italic(w)), values = wes_palette("Moonrise2")[c(4, 1)]) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(title = expression(alpha%~%Normal(0*", "*italic(w))),
+       x = "prior prob pull left")
+```
+
+
+
+
+```{r}
+# w = 10
+b11.2 <- 
+  brm(data = d, 
+      family = binomial,
+      bf(pulled_left | trials(1) ~ a + b,
+         a ~ 1, 
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 10), nlpar = b, coef = treatment1),
+                prior(normal(0, 10), nlpar = b, coef = treatment2),
+                prior(normal(0, 10), nlpar = b, coef = treatment3),
+                prior(normal(0, 10), nlpar = b, coef = treatment4)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      sample_prior = T,
+      file = "fits/b11.02")
+
+# w = 0.5
+b11.3 <- 
+  brm(data = d, 
+      family = binomial,
+      bf(pulled_left | trials(1) ~ a + b,
+         a ~ 1, 
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 0.5), nlpar = b, coef = treatment1),
+                prior(normal(0, 0.5), nlpar = b, coef = treatment2),
+                prior(normal(0, 0.5), nlpar = b, coef = treatment3),
+                prior(normal(0, 0.5), nlpar = b, coef = treatment4)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      sample_prior = T,
+      file = "fits/b11.03")
+```
+
+
+```{r}
+# wrangle
+prior <-
+  bind_rows(prior_samples(b11.2),
+            prior_samples(b11.3)) %>% 
+  mutate(w  = factor(rep(c(10, 0.5), each = n() / 2),
+                     levels = c(10, 0.5)),
+         p1 = inv_logit_scaled(b_a + b_b_treatment1),
+         p2 = inv_logit_scaled(b_a + b_b_treatment2)) %>% 
+  mutate(diff = abs(p1 - p2)) 
+
+# plot
+prior %>% 
+  ggplot(aes(x = diff, fill = w)) +
+  geom_density(size = 0, alpha = 3/4, adjust = 0.1) +
+  scale_fill_manual(expression(italic(w)), values = wes_palette("Moonrise2")[c(4, 2)]) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(title = expression(alpha%~%Normal(0*", "*italic(w))),
+       x = "prior diff between treatments")
+```
+
+
+```{r}
+print(b11.3)
+```
+
+
+```{r}
+library(tidybayes)
+
+posterior_samples(b11.3) %>% 
+  transmute(alpha = inv_logit_scaled(b_a_Intercept)) %>% 
+  mean_qi()
+```
+
+
+```{r}
+posterior_samples(b11.3) %>% 
+  pivot_longer(b_b_treatment1:b_b_treatment4) %>% 
+  mutate(treatment = str_remove(name, "b_b_treatment"),
+         mean      = inv_logit_scaled(b_a_Intercept + value)) %>%
+  group_by(treatment) %>% 
+  mean_qi(mean)
+```
+
+
+
+```{r}
+d <-
+  d %>% 
+  mutate(actor = factor(actor))
+```
+
+
+```{r}
+b11.4 <- 
+  brm(data = d, 
+      family = binomial,
+      bf(pulled_left | trials(1) ~ a + b,
+         a ~ 0 + actor, 
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 0.5), nlpar = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      sample_prior = TRUE,
+      file = "fits/b11.04")
+```
+
+
+```{r}
+print(b11.4)
+```
+
+
+```{r}
+library(tidybayes)
+
+post <- posterior_samples(b11.4)
+
+post %>% 
+  pivot_longer(contains("actor")) %>%
+  mutate(probability = inv_logit_scaled(value),
+         actor       = factor(str_remove(name, "b_a_actor"),
+                              levels = 7:1)) %>% 
+  
+  ggplot(aes(x = probability, y = actor)) +
+  geom_vline(xintercept = .5, color = wes_palette("Moonrise2")[1], linetype = 3) +
+  stat_pointinterval(.width = .95, size = 1,
+                     color = wes_palette("Moonrise2")[4]) +
+  scale_x_continuous(expression(alpha[actor]), limits = 0:1) +
+  ylab(NULL) +
+  theme(axis.ticks.y = element_blank())
+```
+
+
+```{r}
+d %>%
+  group_by(actor, treatment) %>%
+  summarise(proportion = mean(pulled_left)) %>% 
+  filter(actor == 1)
+```
+
+
+
+
+```{r}
+p1 <-
+  d %>%
+  group_by(actor, treatment) %>%
+  summarise(proportion = mean(pulled_left)) %>% 
+  left_join(d %>% distinct(actor, treatment, labels, condition, prosoc_left),
+            by = c("actor", "treatment")) %>% 
+  mutate(condition = factor(condition)) %>% 
+  
+  ggplot(aes(x = labels, y = proportion)) +
+  geom_hline(yintercept = .5, color = wes_palette("Moonrise2")[3]) +
+  geom_line(aes(group = prosoc_left),
+            size = 1/4, color = wes_palette("Moonrise2")[4]) +
+  geom_point(aes(color = condition),
+             size = 2.5, show.legend = F) + 
+  labs(subtitle = "observed proportions")
+
+```
+
+
+```{r}
+nd <- 
+  d %>% 
+  distinct(actor, treatment, labels, condition, prosoc_left)
+
+p2 <-
+  fitted(b11.4,
+         newdata = nd) %>% 
+  data.frame() %>% 
+  bind_cols(nd) %>% 
+  mutate(condition = factor(condition)) %>% 
+  
+  ggplot(aes(x = labels, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+  geom_hline(yintercept = .5, color = wes_palette("Moonrise2")[3]) +
+  geom_line(aes(group = prosoc_left),
+            size = 1/4, color = wes_palette("Moonrise2")[4]) +
+  geom_pointrange(aes(color = condition),
+                  fatten = 2.5, show.legend = F) + 
+  labs(subtitle = "posterior predictions")
+
+# combine the two ggplots
+library(patchwork)
+
+(p1 / p2) &
+  scale_color_manual(values = wes_palette("Moonrise2")[c(2:1)]) &
+  scale_y_continuous("proportion left lever", 
+                     breaks = c(0, .5, 1), limits = c(0, 1)) &
+  xlab(NULL) &
+  theme(axis.ticks.x = element_blank(),
+        panel.background = element_rect(fill = alpha("white", 1/10), size = 0)) &
+  facet_wrap(~ actor, nrow = 1, labeller = label_both)
+```
+
+
+
+```{r}
+d <-
+  d %>% 
+  mutate(side = factor(prosoc_left + 1),  # right 1, left 2
+         cond = factor(condition + 1))    # no partner 1, partner 2
+```
+
+
+```{r}
+b11.5 <- 
+  brm(data = d, 
+      family = binomial,
+      bf(pulled_left | trials(1) ~ a + bs + bc,
+         a ~ 0 + actor, 
+         bs ~ 0 + side, 
+         bc ~ 0 + cond,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 0.5), nlpar = bs),
+                prior(normal(0, 0.5), nlpar = bc)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.05")
+```
+
+```{r}
+print(b11.5)
+```
+
+
+```{r}
+b11.4 <- add_criterion(b11.4, c("loo", "waic"))
+b11.5 <- add_criterion(b11.5, c("loo", "waic"))
+
+loo_compare(b11.4, b11.5, criterion = "loo") %>% print(simplify = F)
+```
+
+
+```{r}
+nd <- 
+  d %>% 
+  distinct(actor, treatment, labels, cond, side)
+
+fitted(b11.5,
+       newdata = nd) %>% 
+  data.frame() %>% 
+  bind_cols(nd) %>% 
+  
+  ggplot(aes(x = labels, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+  geom_hline(yintercept = .5, color = wes_palette("Moonrise2")[3]) +
+  geom_line(aes(group = side),
+            size = 1/4, color = wes_palette("Moonrise2")[4]) +
+  geom_pointrange(aes(color = cond),
+                  fatten = 2.5, show.legend = F) + 
+  scale_color_manual(values = wes_palette("Moonrise2")[c(2:1)]) +
+  scale_y_continuous("proportion left lever", 
+                     breaks = c(0, .5, 1), limits = c(0, 1)) +
+  labs(subtitle = "posterior predictions for b11.5",
+       x = NULL) +
+  theme(axis.ticks.x = element_blank(),
+        panel.background = element_rect(fill = alpha("white", 1/10), size = 0)) +
+  facet_wrap(~ actor, nrow = 1, labeller = label_both)
+```
+
+
+```{r}
+posterior_samples(b11.4) %>% 
+  mutate(proportional_odds = exp(b_b_treatment4 - b_b_treatment2)) %>% 
+  mean_qi(proportional_odds)
+```
+
+
+
+
+## aggregated example 
+
+```{r}
+d_aggregated <-
+  d %>%
+  group_by(treatment, actor, side, cond) %>%
+  summarise(left_pulls = sum(pulled_left)) %>% 
+  ungroup()
+
+d_aggregated %>%
+  head(n = 8)
+```
+
+
+
+```{r}
+b11.6 <- 
+  brm(data = d_aggregated, 
+      family = binomial,
+      bf(left_pulls | trials(18) ~ a + b,
+         a ~ 0 + actor, 
+         b ~ 0 + treatment,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 0.5), nlpar = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.06")
+```
+
+
+```{r}
+print(b11.6)
+```
+
+
+```{r}
+# this is just for fancy annotation
+text <-
+  tibble(value = c(1.4, 2.6),
+         name  = "b_a_actor7",
+         fit   = c("b11.6", "b11.4"))
+
+# rope in the posterior draws and wrangle
+bind_rows(posterior_samples(b11.4),
+          posterior_samples(b11.6)) %>% 
+  mutate(fit = rep(c("b11.4", "b11.6"), each = n() / 2)) %>% 
+  pivot_longer(b_a_actor1:b_b_treatment4) %>% 
+  
+  # plot
+  ggplot(aes(x = value, y = name, color = fit)) +
+  stat_pointinterval(.width = .95, size = 2/3,
+                     position = position_dodge(width = 0.5)) +
+  scale_color_manual(values = wes_palette("Moonrise2")[2:1]) +
+  geom_text(data = text,
+            aes(label = fit),
+            family = "Times", position = position_dodge(width = 2.25)) +
+  labs(x = "posterior (log-odds scale)",
+       y = NULL) +
+  theme(axis.ticks.y = element_blank(),
+        legend.position = "none")
+```
+
+
+```{r}
+b11.4 <- add_criterion(b11.4, "loo")
+b11.6 <- add_criterion(b11.6, "loo")
+```
+
+
+```{r}
+#loo_compare(b11.4, b11.6, criterion = "loo") %>% print(simplify = F)
+```
+
+
+
+
+```{r}
+data(UCBadmit, package = "rethinking")
+d <- UCBadmit
+rm(UCBadmit)
+
+d
+```
+
+
+```{r}
+d <- 
+  d %>%  
+  mutate(gid  = factor(applicant.gender, levels = c("male", "female")),
+         case = factor(1:n()))
+```
+
+
+
+```{r}
+b11.7 <-
+  brm(data = d, 
+      family = binomial,
+      admit | trials(applications) ~ 0 + gid,
+      prior(normal(0, 1.5), class = b),
+      iter = 2000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.07") 
+```
+
+```{r}
+print(b11.7)
+```
+
+
+
+```{r}
+posterior_samples(b11.7) %>% 
+  mutate(diff_a = b_gidmale - b_gidfemale,
+         diff_p = inv_logit_scaled(b_gidmale) - inv_logit_scaled(b_gidfemale)) %>% 
+  pivot_longer(contains("diff")) %>% 
+  group_by(name) %>% 
+  mean_qi(value, .width = .89)
+```
+
+
+```{r}
+p <- 
+  predict(b11.7) %>% 
+  data.frame() %>% 
+  bind_cols(d)
+
+text <-
+  d %>%
+  group_by(dept) %>%
+  summarise(case  = mean(as.numeric(case)),
+            admit = mean(admit / applications) + .05)
+
+p %>% 
+  ggplot(aes(x = case, y = admit / applications)) +
+  geom_pointrange(aes(y    = Estimate / applications,
+                      ymin = Q2.5     / applications ,
+                      ymax = Q97.5    / applications),
+                  color = wes_palette("Moonrise2")[1],
+                  shape = 1, alpha = 1/3) +
+  geom_point(color = wes_palette("Moonrise2")[2]) +
+  geom_line(aes(group = dept),
+            color = wes_palette("Moonrise2")[2]) +
+  geom_text(data = text,
+            aes(y = admit, label = dept),
+            color = wes_palette("Moonrise2")[2],
+            family = "serif") +
+  scale_y_continuous("Proportion admitted", limits = 0:1) +
+  ggtitle("Posterior validation check") +
+  theme(axis.ticks.x = element_blank())
+```
+
+
+```{r}
+b11.8 <-
+  brm(data = d, 
+      family = binomial,
+      bf(admit | trials(applications) ~ a + d,
+         a ~ 0 + gid, 
+         d ~ 0 + dept,
+         nl = TRUE),
+      prior = c(prior(normal(0, 1.5), nlpar = a),
+                prior(normal(0, 1.5), nlpar = d)),
+      iter = 4000, warmup = 1000, cores = 4, chains = 4,
+      seed = 11,
+      file = "fits/b11.08") 
+```
+
+```{r}
+print(b11.8)
+```
+
+
+```{r}
+posterior_samples(b11.8) %>% 
+  mutate(diff_a = b_a_gidmale - b_a_gidfemale,
+         diff_p = inv_logit_scaled(b_a_gidmale) - inv_logit_scaled(b_a_gidfemale)) %>% 
+  pivot_longer(contains("diff")) %>% 
+  group_by(name) %>% 
+  mean_qi(value, .width = .89)
+```
+
+
+# Poisson Regression 
+## Oceanic tools example 
+
+
+```{r}
+data(Kline, package = "rethinking")
+d <- Kline
+rm(Kline)
+
+d
+```
+
+
+```{r}
+d <-
+  d %>%
+  mutate(log_pop_std = (log(population) - mean(log(population))) / sd(log(population)),
+         cid         = contact)
+```
+
+
+
+```{r}
+tibble(x       = c(3, 22),
+       y       = c(0.055, 0.04),
+       meanlog = c(0, 3),
+       sdlog   = c(10, 0.5)) %>% 
+  expand(nesting(x, y, meanlog, sdlog),
+         number = seq(from = 0, to = 100, length.out = 200)) %>% 
+  mutate(density = dlnorm(number, meanlog, sdlog),
+         group   = str_c("alpha%~%Normal(", meanlog, ", ", sdlog, ")")) %>% 
+  
+  ggplot(aes(fill = group, color = group)) +
+  geom_area(aes(x = number, y = density),
+            alpha = 3/4, size = 0, position = "identity") +
+  geom_text(data = . %>% group_by(group) %>% slice(1),
+            aes(x = x, y = y, label = group),
+            parse = T,  hjust = 0) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_color_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab("mean number of tools") +
+  theme(legend.position = "none")
+```
+
+
+
+```{r}
+tibble(x    = c(10, 4),
+       y    = c(0.05, 0.5),
+       mean = c(0, 3),
+       sd   = c(10, 0.5)) %>% 
+  expand(nesting(x, y, mean, sd),
+         number = seq(from = -25, to = 25, length.out = 500)) %>% 
+  mutate(density = dnorm(number, mean, sd),
+         group   = str_c("alpha%~%Normal(", mean, ", ", sd, ")")) %>% 
+  
+  ggplot(aes(fill = group, color = group)) +
+  geom_area(aes(x = number, y = density),
+            alpha = 3/4, size = 0, position = "identity") +
+  geom_text(data = . %>% group_by(group) %>% slice(1),
+            aes(x = x, y = y, label = group),
+            parse = T,  hjust = 0) +
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_color_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  xlab(expression(lambda~scale)) +
+  theme(legend.position = "none")
+```
+
+
+
+```{r}
+set.seed(11)
+
+# how many lines would you like?
+n <- 100
+
+# simulate and wrangle
+tibble(i = 1:n,
+       a = rnorm(n, mean = 3, sd = 0.5)) %>% 
+  mutate(`beta%~%Normal(0*', '*10)`  = rnorm(n, mean = 0 , sd = 10),
+         `beta%~%Normal(0*', '*0.2)` = rnorm(n, mean = 0 , sd = 0.2)) %>% 
+  pivot_longer(contains("beta"),
+               values_to = "b",
+               names_to = "prior") %>% 
+  expand(nesting(i, a, b, prior),
+         x = seq(from = -2, to = 2, length.out = 100)) %>% 
+  
+  # plot
+  ggplot(aes(x = x, y = exp(a + b * x), group = i)) +
+  geom_line(size = 1/4, alpha = 2/3,
+            color = wes_palette("Moonrise2")[4]) +
+  labs(x = "log population (std)",
+       y = "total tools") +
+  coord_cartesian(ylim = c(0, 100)) +
+  facet_wrap(~ prior, labeller = label_parsed)
+```
+
+
+
+```{r}
+set.seed(11)
+
+prior <-
+  tibble(i = 1:n,
+         a = rnorm(n, mean = 3, sd = 0.5),
+         b = rnorm(n, mean = 0, sd = 0.2)) %>% 
+  expand(nesting(i, a, b),
+         x = seq(from = log(100), to = log(200000), length.out = 100))
+
+# left
+p1 <-
+  prior %>% 
+  ggplot(aes(x = x, y = exp(a + b * x), group = i)) +
+  geom_line(size = 1/4, alpha = 2/3,
+            color = wes_palette("Moonrise2")[4]) +
+  labs(subtitle = expression(beta%~%Normal(0*', '*0.2)),
+       x = "log population",
+       y = "total tools") +
+  coord_cartesian(xlim = c(log(100), log(200000)),
+                  ylim = c(0, 500))
+# right
+p2 <-
+  prior %>% 
+  ggplot(aes(x = exp(x), y = exp(a + b * x), group = i)) +
+  geom_line(size = 1/4, alpha = 2/3,
+            color = wes_palette("Moonrise2")[4]) +
+  labs(subtitle = expression(beta%~%Normal(0*', '*0.2)),
+       x = "population",
+       y = "total tools") +
+  coord_cartesian(xlim = c(100, 200000),
+                  ylim = c(0, 500))
+
+# combine
+p1 | p2
+```
+
+
+
+```{r}
+# intercept only
+b11.9 <-
+  brm(data = d, 
+      family = poisson,
+      total_tools ~ 1,
+      prior(normal(3, 0.5), class = Intercept),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.09") 
+
+# interaction model
+b11.10 <-
+  brm(data = d, 
+      family = poisson,
+      bf(total_tools ~ a + b * log_pop_std,
+         a + b ~ 0 + cid,
+         nl = TRUE),
+      prior = c(prior(normal(3, 0.5), nlpar = a),
+                prior(normal(0, 0.2), nlpar = b)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      file = "fits/b11.10") 
+```
+
+
+```{r}
+print(b11.10)
+```
+
+
+
+```{r}
+b11.9  <- add_criterion(b11.9, "loo")
+b11.10 <- add_criterion(b11.10, "loo")
+
+loo_compare(b11.9, b11.10, criterion = "loo") %>% print(simplify = F)
+```
+
+
+
+```{r}
+loo(b11.10) %>% loo::pareto_k_table()
+```
+
+
+
+```{r}
+tibble(culture = d$culture,
+       k       = b11.10$criteria$loo$diagnostics$pareto_k) %>% 
+  arrange(desc(k)) %>% 
+  mutate_if(is.double, round, digits = 2)
+```
+
+
+
+```{r}
+cultures <- c("Hawaii", "Tonga", "Trobriand", "Yap")
+
+library(ggrepel)
+
+nd <-
+  distinct(d, cid) %>% 
+  expand(cid, 
+         log_pop_std = seq(from = -4.5, to = 2.5, length.out = 100))
+f <- 
+  fitted(b11.10,
+         newdata = nd,
+         probs = c(.055, .945)) %>%
+  data.frame() %>%
+  bind_cols(nd)
+
+p1 <-
+  f %>%
+  ggplot(aes(x = log_pop_std, group = cid, color = cid)) +
+  geom_smooth(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5, fill = cid),
+              stat = "identity",
+              alpha = 1/4, size = 1/2) +
+  geom_point(data = bind_cols(d, b11.10$criteria$loo$diagnostics),
+             aes(y = total_tools, size = pareto_k),
+             alpha = 2/5) +
+  geom_text_repel(data = 
+                    bind_cols(d, b11.10$criteria$loo$diagnostics) %>% 
+                    filter(culture %in% cultures) %>% 
+                    mutate(label = str_c(culture, " (", round(pareto_k, digits = 2), ")")),
+                  aes(y = total_tools, label = label), 
+                  size = 3, seed = 11, color = "black") +
+  labs(x = "log population (std)",
+       y = "total tools") +
+  coord_cartesian(xlim = range(b11.10$data$log_pop_std),
+                  ylim = c(0, 80))
+```
+
+
+
+```{r}
+p2 <-
+  f %>%
+  mutate(population = exp((log_pop_std * sd(log(d$population))) + mean(log(d$population)))) %>% 
+
+  ggplot(aes(x = population, group = cid, color = cid)) +
+  geom_smooth(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5, fill = cid),
+              stat = "identity",
+              alpha = 1/4, size = 1/2) +
+  geom_point(data = bind_cols(d, b11.10$criteria$loo$diagnostics),
+             aes(y = total_tools, size = pareto_k),
+             alpha = 2/5) +
+  scale_x_continuous("population", breaks = c(0, 50000, 150000, 250000)) +
+  ylab("total tools") +
+  coord_cartesian(xlim = range(d$population),
+                  ylim = c(0, 80))
+```
+
+
+```{r}
+(p1 | p2) &
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) &
+  scale_color_manual(values = wes_palette("Moonrise2")[1:2]) &
+  scale_size(range = c(2, 5)) &
+  theme(legend.position = "none")
+```
+
+
+
+```{r}
+b11.11 <-
+  brm(data = d, 
+      family = poisson(link = "identity"),  # we can specify link function
+      bf(total_tools ~ exp(a) * population^b / g,
+         a + b ~ 0 + cid,
+         g ~ 1,
+         nl = TRUE),
+      prior = c(prior(normal(1, 1), nlpar = a),
+                prior(exponential(1), nlpar = b, lb = 0), #we can specify lower bound (lb)
+                prior(exponential(1), nlpar = g, lb = 0)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 11,
+      control = list(adapt_delta = .95),
+      file = "fits/b11.11") 
+```
+
+
+```{r}
+print(b11.11)
+```
+
+
+```{r}
+b11.11 <- add_criterion(b11.11, criterion = "loo", moment_match = T)
+loo(b11.11)
+```
+
+
+```{r}
+# for the annotation
+text <-
+  distinct(d, cid) %>% 
+  mutate(population  = c(210000, 72500),
+         total_tools = c(59, 68),
+         label       = str_c(cid, " contact"))
+
+# redifine the new data
+nd <-
+  distinct(d, cid) %>% 
+  expand(cid, 
+         population = seq(from = 0, to = 300000, length.out = 100))
+
+# compute the poster predictions for lambda
+fitted(b11.11,
+       newdata = nd,
+       probs = c(.055, .945)) %>%
+  data.frame() %>%
+  bind_cols(nd) %>%
+  
+  # plot!
+  ggplot(aes(x = population, group = cid, color = cid)) +
+  geom_smooth(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5, fill = cid),
+              stat = "identity",
+              alpha = 1/4, size = 1/2) +
+  geom_point(data = bind_cols(d, b11.11$criteria$loo$diagnostics),
+             aes(y = total_tools, size = pareto_k),
+             alpha = 4/5) +
+  geom_text(data = text,
+            aes(y = total_tools, label = label),
+            family = "serif") +
+  scale_fill_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_color_manual(values = wes_palette("Moonrise2")[1:2]) +
+  scale_size(range = c(2, 5)) +
+  scale_x_continuous("population", breaks = c(0, 50000, 150000, 250000)) +
+  ylab("total tools") +
+  coord_cartesian(xlim = range(d$population),
+                  ylim = range(d$total_tools)) +
+  theme(legend.position = "none")
+```
+

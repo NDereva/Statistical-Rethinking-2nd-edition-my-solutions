@@ -1,0 +1,77 @@
+---
+title: "9th Chapter BRMS"
+author: "Mykola Dereva"
+date: "4/7/2021"
+output: html_document
+---
+```{r}
+rm(list = ls())
+```
+
+```{r}
+library(ggthemes)
+```
+
+
+
+
+```{r}
+scales::show_col(economist_pal()(6))
+```
+
+```{r}
+economist_pallete <-  economist_pal()(6)
+```
+
+
+
+```{r}
+set.seed(9)
+
+num_weeks <- 1e5
+positions <- rep(0, num_weeks) 
+current   <- 10
+
+for (i in 1:num_weeks) {
+  
+  # record current position 
+  positions[i] <- current
+  # flip coin to generate proposal
+  proposal <- current + sample(c(-1, 1), size = 1)
+  # now make sure he loops around the archipelago 
+  if (proposal < 1) proposal <- 10
+  if (proposal > 10) proposal <- 1
+  # move?
+  prob_move <- proposal/current
+  current <- ifelse(runif(1) < prob_move, proposal, current)
+  
+}  
+```
+
+
+```{r}
+library(tidyverse)
+
+tibble(week   = 1:1e5,
+       island = positions) %>%
+  ggplot(aes(x = week, y = island)) +
+  geom_point(shape = 1, color = economist_pallete[2], size = 2) +
+  scale_x_continuous(breaks = seq(from = 0, to = 100, by = 20)) +
+  scale_y_continuous(breaks = seq(from = 0, to = 10, by = 2)) +
+  coord_cartesian(xlim = c(0, 100)) +
+  labs(title = "Behold the Metropolis algorithm in action!",
+       subtitle = "The dots show the king's path over the first 100 weeks.")
+```
+
+```{r}
+tibble(week   = 1:1e5,
+       island = positions) %>%
+  mutate(island = factor(island)) %>%
+  
+  ggplot(aes(x = island)) +
+  geom_bar(fill = economist_pallete[1]) +
+  scale_y_continuous("number of weeks", expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "Old Metropolis shines in the long run.",
+       subtitle = "Sure enough, the time the king spent on each island\nwas proportional to its population size.") 
+```
+
