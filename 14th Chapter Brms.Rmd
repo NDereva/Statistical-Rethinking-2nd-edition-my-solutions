@@ -1,0 +1,495 @@
+---
+title: "14th Chapter BRMS"
+author: "Mykola Dereva"
+date: "4/14/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+a       <-  3.5  # average morning wait time
+b       <- -1    # average difference afternoon wait time
+sigma_a <-  1    # std dev in intercepts
+sigma_b <-  0.5  # std dev in slopes
+rho     <- -.7   # correlation between intercepts and slopes
+
+# the next three lines of code simply combine the terms, above
+mu     <- c(a, b)
+
+cov_ab <- sigma_a * sigma_b * rho
+sigma  <- matrix(c(sigma_a^2, cov_ab, 
+                   cov_ab, sigma_b^2), ncol = 2)
+```
+
+
+```{r}
+matrix(1:4, nrow = 2, ncol = 2)
+```
+
+
+```{r}
+
+sigmas <- c(sigma_a, sigma_b)          # standard deviations
+rho    <- matrix(c(1, rho,             # correlation matrix
+                   rho, 1), nrow = 2)
+
+# now matrix multiply to get covariance matrix
+sigma <- diag(sigmas) %*% rho %*% diag(sigmas)
+
+# how many cafes would you like?
+n_cafes <- 20
+
+set.seed(5)  # used to replicate example
+
+vary_effects <- 
+  MASS::mvrnorm(n_cafes, mu, sigma) %>% 
+  data.frame() %>% 
+  set_names("a_cafe", "b_cafe")
+
+head(vary_effects)
+```
+
+```{r}
+theme_set(theme_minimal())
+```
+
+
+```{r}
+vary_effects %>% 
+  ggplot(aes(x = a_cafe, y = b_cafe)) +
+  geom_point(color = "#80A0C7") +
+  geom_rug(color = "#8B9DAF", size = 1/7)
+```
+
+
+```{r}
+cor(vary_effects$a_cafe, vary_effects$b_cafe)
+```
+
+
+```{r}
+n_visits <- 10
+sigma    <-  0.5  # std dev within cafes
+
+set.seed(22)  # used to replicate example
+
+d <-
+  vary_effects %>% 
+  mutate(cafe = 1:n_cafes) %>% 
+  expand(nesting(cafe, a_cafe, b_cafe), visit = 1:n_visits) %>% 
+  mutate(afternoon = rep(0:1, times = n() / 2)) %>% 
+  mutate(mu = a_cafe + b_cafe * afternoon) %>% 
+  mutate(wait = rnorm(n = n(), mean = mu, sd = sigma))
+```
+
+
+```{r}
+d %>%
+  glimpse()
+```
+
+
+
+```{r}
+d %>%
+  mutate(afternoon = ifelse(afternoon == 0, "M", "A"),
+         day       = rep(rep(1:5, each = 2), times = n_cafes)) %>%
+  filter(cafe %in% c(3, 5)) %>%
+  mutate(cafe = str_c("café #", cafe)) %>% 
+  
+  ggplot(aes(x = visit, y = wait, group = day)) +
+  geom_point(aes(color = afternoon), size = 2) +
+  geom_line(color = "#8B9DAF") +
+  scale_color_manual(values = c("#80A0C7", "#EEDA9D")) +
+  scale_x_continuous(NULL, breaks = 1:10, labels = rep(c("M", "A"), times = 5)) +
+  scale_y_continuous("wait time in minutes", limits = c(0, NA)) +
+  theme(axis.ticks.x = element_blank(),
+                      legend.position = "none") +
+  facet_wrap(~ cafe, ncol = 1)
+```
+
+
+
+```{r}
+library(rethinking)
+
+n_sim <- 1e4
+
+set.seed(14)
+r_1 <- 
+  rlkjcorr(n_sim, K = 2, eta = 1) %>%
+  data.frame()
+
+set.seed(14)
+r_2 <- 
+  rlkjcorr(n_sim, K = 2, eta = 2) %>%
+  data.frame()
+
+set.seed(14)
+r_4 <- 
+  rlkjcorr(n_sim, K = 2, eta = 4) %>%
+  data.frame()
+```
+
+```{r}
+# for annotation
+text <-
+  tibble(x     = c(.83, .625, .45),
+         y     = c(.56, .75, 1.07),
+         label = c("eta = 1", "eta = 2", "eta = 4"))
+
+# plot
+r_1 %>% 
+  ggplot(aes(x = X2)) +
+  geom_density(color = "transparent", fill = "#394165", alpha = 2/3, adjust = 1/2) +
+  geom_density(data = r_2,
+               color = "transparent", fill = "#DCA258", alpha = 2/3, adjust = 1/2) +
+  geom_density(data = r_4,
+               color = "transparent", fill = "#FCF9F0", alpha = 2/3, adjust = 1/2) +
+  geom_text(data = text,
+            aes(x = x, y = y, label = label),
+            color = "#A65141") +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(title = expression(LKJcorr(eta)),
+       x = "correlation")
+```
+
+
+```{r}
+library(tidybayes)
+
+crossing(k   = 2:5,
+         eta = 1:4) %>% 
+  mutate(prior = str_c("lkjcorr_marginal(", k, ", ", eta, ")"),
+         strip = str_c("K==", k)) %>% 
+  parse_dist(prior) %>%
+  
+  ggplot(aes(y = eta, dist = .dist, args = .args)) +
+  stat_dist_halfeye(.width = c(.5, .95),
+                    color = "#FCF9F0", fill = "#A65141") +
+  scale_x_continuous(expression(rho), limits = c(-1, 1),
+                     breaks = c(-1, -.5, 0, .5, 1), labels = c("-1", "-.5", "0", ".5", "1")) +
+  scale_y_continuous(expression(eta), breaks = 1:4) +
+  ggtitle(expression("Marginal correlation for the LKJ prior relative to K and "*eta)) +
+  facet_wrap(~ strip, labeller = label_parsed, ncol = 4)
+```
+
+
+```{r}
+detach(package:rethinking, unload = T)
+library(brms)
+```
+
+
+
+```{r}
+ b14.1 <- 
+  brm(data = d, 
+      family = gaussian,
+      wait ~ 1 + afternoon + (1 + afternoon | cafe),
+      prior = c(prior(normal(5, 2), class = Intercept),
+                prior(normal(-1, 0.5), class = b),
+                prior(exponential(1), class = sd),
+                prior(exponential(1), class = sigma),
+                prior(lkj(2), class = cor)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      seed = 867530,
+      file = "fits/b14.01")
+```
+
+```{r}
+print(b14.1)
+```
+
+
+```{r}
+post <- posterior_samples(b14.1)
+
+post %>%
+  ggplot() +
+  geom_density(data = r_2, aes(x = X2),
+               color = "transparent", fill = "#EEDA9D", alpha = 3/4) +
+  geom_density(aes(x = cor_cafe__Intercept__afternoon),
+               color = "transparent", fill = "#A65141", alpha = 9/10) +
+  annotate(geom = "text", 
+           x = c(-0.15, 0), y = c(2.21, 0.85), 
+           label = c("posterior", "prior"), 
+           color = c("#A65141", "#EEDA9D")) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  labs(subtitle = "Correlation between intercepts\nand slopes, prior and posterior",
+  x = "correlation")
+```
+
+```{r}
+coef(b14.1) %>% glimpse()
+```
+
+```{r}
+# coef(b14.1) %>% glimpse()
+coef(b14.1)
+```
+
+
+
+
+```{r}
+partially_pooled_params <-
+  # with this line we select each of the 20 cafe's posterior mean (i.e., Estimate)
+  # for both `Intercept` and `afternoon`
+  coef(b14.1)$cafe[ , 1, 1:2] %>%
+  data.frame() %>%              # convert the two vectors to a data frame
+  rename(Slope = afternoon) %>%
+  mutate(cafe = 1:nrow(.)) %>%  # add the `cafe` index
+  select(cafe, everything())    # simply moving `cafe` to the leftmost position
+```
+
+
+
+```{r}
+# compute unpooled estimates directly from data
+un_pooled_params <-
+  d %>%
+  # with these two lines, we compute the mean value for each cafe's wait time 
+  # in the morning and then the afternoon
+  group_by(afternoon, cafe) %>%
+  summarise(mean = mean(wait)) %>%
+  ungroup() %>%  # ungrouping allows us to alter afternoon, one of the grouping variables
+  mutate(afternoon = ifelse(afternoon == 0, "Intercept", "Slope")) %>%
+  spread(key = afternoon, value = mean) %>%  # use `spread()` just as in the previous block
+  mutate(Slope = Slope - Intercept)          # finally, here's our slope!
+
+# here we combine the partially-pooled and unpooled means into a single data object, 
+# which will make plotting easier.
+params <-
+  # `bind_rows()` will stack the second tibble below the first
+  bind_rows(partially_pooled_params, un_pooled_params) %>%
+  # index whether the estimates are pooled
+  mutate(pooled = rep(c("partially", "not"), each = nrow(.)/2)) 
+
+# here's a glimpse at what we've been working for
+params %>%
+  slice(c(1:5, 36:40))
+```
+
+
+
+
+```{r}
+p1 <-
+  ggplot(data = params, aes(x = Intercept, y = Slope)) +
+  stat_ellipse(geom = "polygon", type = "norm", level = 1/10, size = 0, alpha = 1/10, fill = "skyblue") +
+  stat_ellipse(geom = "polygon", type = "norm", level = 2/10, size = 0, alpha = 1/10, fill = "skyblue") +
+  stat_ellipse(geom = "polygon", type = "norm", level = 3/10, size = 0, alpha = 1/10, fill = "skyblue") +
+  stat_ellipse(geom = "polygon", type = "norm", level = 4/10, size = 0, alpha = 1/10, fill = "skyblue") +
+  stat_ellipse(geom = "polygon", type = "norm", level = 5/10, size = 0, alpha = 1/10, fill = "skyblue") +
+  stat_ellipse(geom = "polygon", type = "norm", level = 6/10, size = 0, alpha = 1/10, fill = "skyblue") +
+  stat_ellipse(geom = "polygon", type = "norm", level = 7/10, size = 0, alpha = 1/10, fill = "skyblue") +
+  stat_ellipse(geom = "polygon", type = "norm", level = 8/10, size = 0, alpha = 1/10, fill = "skyblue") +
+  stat_ellipse(geom = "polygon", type = "norm", level = 9/10, size = 0, alpha = 1/10, fill = "skyblue") +
+  stat_ellipse(geom = "polygon", type = "norm", level = .99,  size = 0, alpha = 1/10, fill = "skyblue") +
+  geom_point(aes(group = cafe, color = pooled)) +
+  geom_line(aes(group = cafe), size = 1/4) +
+  scale_color_manual("Pooled?", values = c("#80A0C7", "#A65141")) +
+  coord_cartesian(xlim = range(params$Intercept),
+                  ylim = range(params$Slope))
+p1
+```
+
+
+```{r}
+# retrieve the partially-pooled estimates with `coef()`
+partially_pooled_estimates <-
+  coef(b14.1)$cafe[ , 1, 1:2] %>%
+  # convert the two vectors to a data frame
+  data.frame() %>%
+  # the Intercept is the wait time for morning (i.e., `afternoon == 0`)
+  rename(morning = Intercept) %>%
+  # `afternoon` wait time is the `morning` wait time plus the afternoon slope
+  mutate(afternoon = morning + afternoon,
+         cafe      = 1:n()) %>%  # add the `cafe` index
+  select(cafe, everything()) 
+
+# compute unpooled estimates directly from data
+un_pooled_estimates <-
+  d %>%
+  # as above, with these two lines, we compute each cafe's mean wait value by time of day
+  group_by(afternoon, cafe) %>% 
+  summarise(mean = mean(wait)) %>%
+  # ungrouping allows us to alter the grouping variable, afternoon
+  ungroup() %>% 
+  mutate(afternoon = ifelse(afternoon == 0, "morning", "afternoon")) %>%
+  # this separates out the values into morning and afternoon columns
+  spread(key = afternoon, value = mean)
+
+estimates <-
+  bind_rows(partially_pooled_estimates, un_pooled_estimates) %>%
+  mutate(pooled = rep(c("partially", "not"), each = n() / 2))
+```
+
+
+```{r}
+p2 <-
+  ggplot(data = estimates, aes(x = morning, y = afternoon)) +
+  # nesting `stat_ellipse()` within `mapply()` is a less redundant way to produce the 
+  # ten-layered semitransparent ellipses we did with ten lines of `stat_ellipse()` 
+  # functions in the previous plot
+  mapply(function(level) {
+    stat_ellipse(geom  = "polygon", type = "norm",
+                 size  = 0, alpha = 1/10, fill = "skyblue",
+                 level = level)
+    }, 
+    # enter the levels here
+    level = c(1:9 / 10, .99)) +
+  geom_point(aes(group = cafe, color = pooled)) +
+  geom_line(aes(group = cafe), size = 1/4) +
+  scale_color_manual("Pooled?", values = c("#80A0C7", "#A65141")) +
+  labs(x = "morning wait (mins)",
+       y = "afternoon wait (mins)") +
+  coord_cartesian(xlim = range(estimates$morning),
+                  ylim = range(estimates$afternoon))
+```
+
+
+```{r}
+library(patchwork)
+
+(p1 + theme(legend.position = "none")) + 
+  p2 + 
+  plot_annotation(title = "Shrinkage in two dimensions")
+```
+
+
+
+
+```{r}
+data(chimpanzees, package = "rethinking")
+d <- chimpanzees
+rm(chimpanzees)
+
+# wrangle
+d <-
+  d %>% 
+  mutate(actor     = factor(actor),
+         block     = factor(block),
+         treatment = factor(1 + prosoc_left + 2 * condition),
+         # this will come in handy, later
+         labels    = factor(treatment,
+                            levels = 1:4,
+                            labels = c("r/n", "l/n", "r/p", "l/p")))
+
+glimpse(d)
+```
+
+
+
+```{r}
+b14.3 <- 
+  brm(data = d, 
+      family = binomial,
+      pulled_left | trials(1) ~ 0 + treatment + (0 + treatment | actor) + (0 + treatment | block),
+      prior = c(prior(normal(0, 1), class = b),
+                prior(exponential(1), class = sd, group = actor),
+                prior(exponential(1), class = sd, group = block),
+                prior(lkj(2), class = cor, group = actor),
+                prior(lkj(2), class = cor, group = block)),
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,  
+      seed = 4387510,
+      file = "fits/b14.03")
+```
+
+```{r}
+print(b14.3)
+```
+
+
+
+```{r}
+library(bayesplot)
+
+# give the parameters fancy names
+names <- 
+  c(str_c("treatment[", 1:4, "]"), 
+    str_c("sigma['actor[", 1:4, "]']"), 
+    str_c("sigma['block[", 1:4, "]']"), 
+    str_c("rho['actor:treatment[", c(1, 1:2, 1:3), ",", rep(2:4, times = 1:3), "]']"), 
+    str_c("rho['block:treatment[", c(1, 1:2, 1:3), ",", rep(2:4, times = 1:3), "]']"), 
+    "chain")
+
+# wrangle
+posterior_samples(b14.3, add_chain = T) %>% 
+  select(b_treatment1:`cor_block__treatment3__treatment4`, chain) %>% 
+  set_names(names) %>% 
+  
+  # plot
+  mcmc_rank_overlay() +
+  scale_color_manual(values = c("#80A0C7", "#B1934A", "#A65141", "#EEDA9D")) +
+  scale_x_continuous(breaks = 0:4 * 1e3, labels = c(0, str_c(1:4, "K"))) +
+  coord_cartesian(ylim = c(30, NA)) +
+  theme(legend.position = "bottom") +
+  facet_wrap(~ parameter, labeller = label_parsed, ncol = 4)
+```
+
+
+
+```{r}
+b14.3 <- add_criterion(b14.3, "waic")
+
+waic(b14.3)
+```
+
+
+```{r}
+# for annotation
+text <-
+  distinct(d, labels) %>% 
+  mutate(actor = 1,
+         prop  = c(.07, .8, .08, .795))
+
+nd <-
+  d %>% 
+  distinct(actor, condition, labels, prosoc_left, treatment) %>% 
+  mutate(block = 5)
+
+# compute and wrangle the posterior predictions
+fitted(b14.3,
+       newdata = nd) %>% 
+  data.frame() %>% 
+  bind_cols(nd) %>% 
+  # add the empirical proportions
+  left_join(
+    d %>%
+      group_by(actor, treatment) %>%
+      mutate(proportion = mean(pulled_left)) %>% 
+      distinct(actor, treatment, proportion),
+    by = c("actor", "treatment")
+  ) %>% 
+  mutate(condition = factor(condition)) %>% 
+  
+  # plot!
+  ggplot(aes(x = labels)) +
+  geom_hline(yintercept = .5, color = "#E8DCCF", alpha = 1/2, linetype = 2) +
+  # empirical proportions
+  geom_line(aes(y = proportion, group = prosoc_left),
+            size = 1/4, color = "#394165") +
+  geom_point(aes(y = proportion, shape = condition),
+             color = "#394165", fill = "#100F14", size = 2.5, show.legend = F) + 
+  # posterior predictions
+  geom_line(aes(y = Estimate, group = prosoc_left),
+            size = 3/4, color = "#80A0C7") +
+  geom_pointrange(aes(y = Estimate, ymin = Q2.5, ymax = Q97.5, shape = condition),
+                  color = "#80A0C7", fill = "#100F14", fatten = 8, size = 1/3, show.legend = F) + 
+  # annotation for the conditions
+  geom_text(data = text,
+            aes(y = prop, label = labels), 
+            color = "#DCA258", family = "Courier", size = 3) +
+  scale_shape_manual(values = c(21, 19)) +
+  scale_x_discrete(NULL, breaks = NULL) +
+  scale_y_continuous("proportion left lever", breaks = 0:2 / 2, labels = c("0", ".5", "1")) +
+  labs(subtitle = "Posterior predictions, in light blue, against the raw data, in dark blue, for\nmodel b14.3, the cross-classified varying effects model.") +
+  facet_wrap(~ actor, nrow = 1, labeller = label_both)
+```
+
